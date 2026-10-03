@@ -62,3 +62,60 @@ export function parseBbox(query: Record<string, unknown>): Bbox | undefined {
   }
   return values;
 }
+
+export interface OccupancyReport {
+  status: ParkingStatus;
+  occupiedSpaces: number | null;
+  confidence: number | null;
+  recognizedAt: Date;
+  data: Record<string, unknown> | null;
+}
+
+const reportStatuses: ParkingStatus[] = ['ACTIVE', 'STREAM_ERROR', 'RECOGNITION_ERROR', 'OFFLINE'];
+
+export function parseOccupancyReport(body: unknown): OccupancyReport {
+  const bad = (message: string) => new InputError('INVALID_REPORT', message);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw bad('Body must be a JSON object.');
+  const { status, occupiedSpaces = null, confidence = null, recognizedAt, data = null } = body as Record<string, unknown>;
+  if (typeof status !== 'string' || !reportStatuses.includes(status as ParkingStatus)) throw bad(`status must be one of ${reportStatuses.join(', ')}.`);
+  if (status === 'ACTIVE' && !(Number.isInteger(occupiedSpaces) && (occupiedSpaces as number) >= 0)) throw bad('occupiedSpaces must be a non-negative integer when status is ACTIVE.');
+  if (occupiedSpaces !== null && !(Number.isInteger(occupiedSpaces) && (occupiedSpaces as number) >= 0)) throw bad('occupiedSpaces must be a non-negative integer.');
+  if (confidence !== null && !(typeof confidence === 'number' && confidence >= 0 && confidence <= 1)) throw bad('confidence must be a number between 0 and 1.');
+  const when = recognizedAt === undefined ? new Date() : new Date(recognizedAt as string);
+  if (Number.isNaN(when.getTime()) || when.getTime() > Date.now() + 60_000) throw bad('recognizedAt must be a valid, non-future timestamp.');
+  if (data !== null && (typeof data !== 'object' || Array.isArray(data))) throw bad('data must be an object.');
+  return { status: status as ParkingStatus, occupiedSpaces: occupiedSpaces as number | null, confidence: confidence as number | null, recognizedAt: when, data: data as Record<string, unknown> | null };
+}
+
+export interface CameraRecord {
+  id: string;
+  parkingId: string | null;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  url: string;
+  sourceUrl: string | null;
+  mediaType: 'image' | 'video' | 'page';
+  selector: string | null;
+  readySelector: string | null;
+  frameSelector: string | null;
+  clickSelectors: unknown;
+  startPlayback: boolean;
+  fullPage: boolean;
+  viewportWidth: number;
+  viewportHeight: number;
+  timeoutMs: number;
+  settleMs: number;
+  attempts: number;
+  maxCaptures: number;
+  maxMediaAgeSeconds: number;
+  captureIntervalSeconds: number | null;
+  parkingAreas: unknown;
+}
+
+// Shape the camera worker consumes: optional values are omitted, the viewport is nested.
+export function cameraDto(camera: CameraRecord) {
+  const { viewportWidth, viewportHeight, ...rest } = camera;
+  const optional = Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== null));
+  return { ...optional, viewport: { width: viewportWidth, height: viewportHeight } };
+}

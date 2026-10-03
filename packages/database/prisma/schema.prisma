@@ -32,7 +32,48 @@ model Parking {
   workerLeaseUntil      DateTime?     @db.Timestamptz(3)
   createdAt             DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt             DateTime      @updatedAt @db.Timestamptz(3)
+  cameras               Camera[]
 
   @@index([status, workerLeaseUntil])
   @@index([workerId, workerLeaseUntil])
+}
+
+enum MediaType {
+  image
+  video
+  page
+}
+
+// Configuration of one public camera; a camera worker is started with a camera id and loads this row.
+model Camera {
+  id                  String    @id
+  parkingId           String?   @db.Uuid
+  parking             Parking?  @relation(fields: [parkingId], references: [id], onDelete: SetNull)
+  name                String
+  description         String?
+  enabled             Boolean   @default(true)
+  url                 String
+  sourceUrl           String?
+  mediaType           MediaType @default(image)
+  selector            String?
+  readySelector       String?
+  frameSelector       String?
+  clickSelectors      Json      @default("[]")
+  startPlayback       Boolean   @default(true)
+  fullPage            Boolean   @default(false)
+  viewportWidth       Int       @default(1280)
+  viewportHeight      Int       @default(720)
+  timeoutMs           Int       @default(30000)
+  settleMs            Int       @default(1000)
+  attempts            Int       @default(2)
+  maxCaptures         Int       @default(288)
+  maxMediaAgeSeconds  Int       @default(900)
+  // Seconds between captures; null means the worker's CAPTURE_INTERVAL_SECONDS (default 60).
+  captureIntervalSeconds Int?
+  // Hand-marked polygons: [{ id, points: [[x, y], ...], capacity?, mask? }], coordinates 0–1.
+  parkingAreas        Json      @default("[]")
+  createdAt           DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([parkingId])
 }

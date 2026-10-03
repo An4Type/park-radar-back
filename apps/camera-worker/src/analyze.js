@@ -56,13 +56,43 @@ export async function prepareInputs(browser, png, areas) {
   }
 }
 
+// Strict structured output: the model can only answer with these fields, so no free text can come back.
+export const REPLY_FORMAT = {
+  type: 'json_schema',
+  name: 'parking_counts',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['areas', 'frame_usable'],
+    properties: {
+      areas: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'vehicles', 'parked', 'moving', 'confidence'],
+          properties: {
+            id: { type: 'string' },
+            vehicles: { type: 'integer' },
+            parked: { type: 'integer' },
+            moving: { type: 'integer' },
+            confidence: { type: 'number' },
+          },
+        },
+      },
+      frame_usable: { type: 'boolean' },
+    },
+  },
+};
+
 export function buildPrompt(areas) {
   return `You will see one frame from a fixed parking camera, then one zoomed crop per parking area. In the full frame everything outside the labelled areas is blacked out; each crop is the same area enlarged, with its surroundings blacked out.
 Areas (id, capacity = how many cars fit when full):
 ${areas.map((a) => `- ${a.id}${a.capacity ? ` (capacity ${a.capacity})` : ''}`).join('\n')}
-For each area count the separate vehicles inside it, whether parked or moving, and say how many look parked and how many look moving. Use the crop to count precisely and the full frame for context. Cars parked in a row appear as several vehicles close together: count each one, including partly visible ones at the ends of the row. Do not assume an area is full or empty because of its capacity. Return JSON only:
-{"areas": [{"id": string, "vehicles": number, "parked": number, "moving": number, "confidence": number between 0 and 1, "notes": string}],
- "frame_usable": boolean, "notes": string}
+For each area count the separate vehicles inside it, whether parked or moving, and say how many look parked and how many look moving. Use the crop to count precisely and the full frame for context. Cars parked in a row appear as several vehicles close together: count each one, including partly visible ones at the ends of the row. Do not assume an area is full or empty because of its capacity. Return JSON only, with numbers and no commentary or notes:
+{"areas": [{"id": string, "vehicles": number, "parked": number, "moving": number, "confidence": number between 0 and 1}],
+ "frame_usable": boolean}
 Count only vehicles you can clearly see. Use frame_usable=false if the areas are obscured. Do not identify people or read licence plates.`;
 }
 
@@ -76,6 +106,7 @@ export async function askModel({ apiKey, model, prompt, frame, crops, signal }) 
     signal,
     body: JSON.stringify({
       model,
+      text: { format: REPLY_FORMAT },
       max_output_tokens: 4000, // reasoning models spend part of this before answering
       input: [{ role: 'user', content: [
         { type: 'input_text', text: prompt },
@@ -106,7 +137,7 @@ export function interpretReply(reply, areas, media) {
     const found = Array.isArray(reply?.areas) ? reply.areas.find((a) => a.id === area.id) : undefined;
     const vehicles = Number(found?.vehicles);
     if (!found || !Number.isInteger(vehicles) || vehicles < 0) {
-      return { id: area.id, state: 'unknown', vehicles: null, capacity, free: null, notes: found ? 'invalid answer' : 'no answer' };
+      return { id: area.id, state: 'unknown', vehicles: null, capacity, free: null, reason: found ? 'invalid answer' : 'no answer' };
     }
     const state = reasons.length ? 'unknown' : 'ok';
     const confidence = Number(found.confidence);
@@ -118,7 +149,6 @@ export function interpretReply(reply, areas, media) {
       free: state === 'ok' && capacity !== null ? Math.max(0, capacity - vehicles) : null,
       overCapacity: capacity !== null && vehicles > capacity,
       confidence: Number.isFinite(confidence) ? confidence : null,
-      notes: found.notes ?? null,
     };
   });
   const complete = results.every((r) => r.free !== null);
@@ -127,7 +157,6 @@ export function interpretReply(reply, areas, media) {
     reasons,
     areas: results,
     totalFree: complete ? results.reduce((sum, r) => sum + r.free, 0) : null,
-    modelNotes: reply?.notes ?? null,
   };
 }
 

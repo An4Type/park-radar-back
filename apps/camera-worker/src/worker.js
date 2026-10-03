@@ -7,9 +7,10 @@ import { getCamera } from './store.js';
 import { log } from './capture.js';
 import { analyzeFrame, askModel, DEFAULT_MODEL } from './analyze.js';
 import { runCycle } from './cycle.js';
+import { buildReport, sendReport } from './report.js';
 
 // Worker life cycle for one camera:
-//   1. pull the camera definition (store.js; a placeholder for the database)
+//   1. pull the camera definition from the database via the API (store.js), again every cycle
 //   2. capture a screenshot            3. apply the configured parking areas
 //   4. ask the vision model to count   5. log the analysis
 //   6. wait for the interval and repeat from 2
@@ -22,9 +23,10 @@ async function main() {
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const outputDir = resolve(process.env.OUTPUT_DIR ?? 'screenshots');
-  const interval = intervalMs(process.env.CAPTURE_INTERVAL_SECONDS);
+  const defaultInterval = intervalMs(process.env.CAPTURE_INTERVAL_SECONDS);
 
-  const camera = await getCamera(cameraId); // step 1
+  let camera = await getCamera(cameraId); // step 1; a failure here stops the worker so it restarts
+  let interval = (camera.captureIntervalSeconds ?? defaultInterval / 1000) * 1000;
   const controller = new AbortController();
   const stop = (signal) => {
     log('shutdown_requested', { signal });
@@ -40,7 +42,17 @@ async function main() {
   const analyze = ({ png, camera, media }) => analyzeFrame({ browser, png, camera, media, model, ask });
   try {
     do {
-      const { ok } = await runCycle({ browser, camera, outputDir, analyze }); // steps 2-5
+      // Config edits in the database apply on the next cycle; keep the last good config if the API is down.
+      try {
+        camera = await getCamera(cameraId, { signal: controller.signal });
+        interval = (camera.captureIntervalSeconds ?? defaultInterval / 1000) * 1000;
+      } catch (error) {
+        log('camera_refresh_failed', { camera: cameraId, message: error.message });
+      }
+      const result = await runCycle({ browser, camera, outputDir, analyze }); // steps 2-5
+      const { ok } = result;
+      const report = buildReport(camera, result);
+      if (report) await sendReport({ report, parkingId: camera.parkingId, signal: controller.signal }); // step 5b
       // Frames are only input for the analysis: discard them (and the crops) whether or not it succeeded.
       await rm(join(outputDir, camera.id), { recursive: true, force: true });
       log('cycle_finished', { camera: camera.id, ok });

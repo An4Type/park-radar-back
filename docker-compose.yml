@@ -6,10 +6,8 @@ x-camera-worker: &camera-worker
   shm_size: 1gb
   env_file: .env
   environment: &camera-worker-environment
-    CAMERAS_FILE: /app/config/cameras.json
+    INGEST_URL: http://api:3000
     OUTPUT_DIR: /app/screenshots
-  volumes:
-    - ./apps/camera-worker/config:/app/config:ro
   # Scratch space only: the worker deletes every frame after analysing it.
   tmpfs:
     - /app/screenshots:uid=${LOCAL_UID:-1000},gid=${LOCAL_GID:-1000}
@@ -23,6 +21,9 @@ x-camera-worker: &camera-worker
       max-size: "10m"
       max-file: "3"
   restart: unless-stopped
+  depends_on:
+    api:
+      condition: service_healthy
 
 services:
   postgres:

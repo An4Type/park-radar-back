@@ -9,7 +9,7 @@ export async function runCycle({ browser, camera, outputDir, analyze }) {
   const capture = await captureCamera(browser, camera, outputDir);
   if (!capture.ok) {
     log('analysis_skipped', { camera: camera.id, reason: 'capture failed', error: capture.error });
-    return { ok: false };
+    return { ok: false, reason: 'capture' };
   }
   try {
     const png = await readFile(join(outputDir, camera.id, capture.filename));
@@ -22,9 +22,9 @@ export async function runCycle({ browser, camera, outputDir, analyze }) {
       frameAgeSeconds: capture.media?.ageSeconds ?? null,
       ...analysis,
     });
-    return { ok: true, analysis };
+    return { ok: true, analysis, capturedAt: capture.capturedAt };
   } catch (error) {
     log('analysis_failed', { camera: camera.id, frame: capture.filename, message: error.message });
-    return { ok: false };
+    return { ok: false, reason: 'analysis' };
   }
 }

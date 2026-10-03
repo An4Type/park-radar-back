@@ -28,7 +28,7 @@ The first response should report `{"status":"ok","database":"connected"}`. The B
 | Path | Responsibility |
 | --- | --- |
 | `apps/api` | Express routes, validation, DTOs, PostGIS BBOX query |
-| `apps/camera-worker` | Standalone JavaScript worker: capture, parking areas, vision-model count, logs per camera (cameras in `config/cameras.json`; frames are discarded after analysis, only the logs remain) |
+| `apps/camera-worker` | Standalone JavaScript worker: capture, parking areas, vision-model count, logs per camera (camera definition loaded from the database by `CAMERA_ID`; frames are discarded after analysis, only the logs remain) |
 | `apps/worker` (not started by Compose) | Lease coordination, monitoring loop, Playwright capture, mock recognition |
 | `packages/database` | Prisma schema, SQL migration, seed, database client |
 | `packages/shared` | Shared parking types, BBOX validation, structured logs |

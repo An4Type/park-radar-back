@@ -4,3 +4,6 @@ dist/
 .cache/
 coverage/
 packages/database/generated/
+
+# nested workspace repo (camera worker) with its own git history
+workspace/

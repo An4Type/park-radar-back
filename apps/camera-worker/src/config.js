@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises';
-
 function integer(value, name, min, max) {
   if (!Number.isInteger(value) || value < min || value > max) {
     throw new Error(`${name} must be an integer between ${min} and ${max}`);
@@ -69,6 +67,9 @@ export function validateCameras(input) {
       parkingAreas: [],
       ...camera,
     };
+    if (result.parkingId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.parkingId)) {
+      throw new Error(`${camera.id}.parkingId must be a UUID`);
+    }
     result.parkingAreas = parkingAreas(result.parkingAreas, camera.id);
     url(result.url, `${camera.id}.url`);
     if (result.sourceUrl !== undefined) url(result.sourceUrl, `${camera.id}.sourceUrl`);
@@ -93,6 +94,7 @@ export function validateCameras(input) {
     integer(result.attempts, 'attempts', 1, 5);
     integer(result.maxCaptures, 'maxCaptures', 1, 100000);
     integer(result.maxMediaAgeSeconds, 'maxMediaAgeSeconds', 1, 86400);
+    if (result.captureIntervalSeconds !== undefined) integer(result.captureIntervalSeconds, 'captureIntervalSeconds', 1, 86400);
     return result;
   });
   const enabled = cameras.filter((camera) => camera.enabled);
@@ -100,11 +102,7 @@ export function validateCameras(input) {
   return enabled;
 }
 
-export async function loadCameras(file) {
-  return validateCameras(JSON.parse(await readFile(file, 'utf8')));
-}
-
-export function intervalMs(value = '300') {
+export function intervalMs(value = '60') {
   if (typeof value !== 'string' || !/^\d+$/.test(value)) throw new Error('CAPTURE_INTERVAL_SECONDS must be an integer');
   return integer(Number(value), 'CAPTURE_INTERVAL_SECONDS', 1, 86400) * 1000;
 }
