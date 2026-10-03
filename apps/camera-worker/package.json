@@ -1,0 +1,32 @@
+{
+  "name": "parking-space",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scheduled screenshots of public Kraków webcam pages using Chromium and Playwright",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "capture": "node src/index.js --once",
+    "test": "node --test test/*.test.js",
+    "test:integration": "node --test test/*.integration.js",
+    "check": "./test.sh",
+    "docker:build": "docker compose build",
+    "docker:once": "./capture.sh",
+    "docker:up": "./up.sh",
+    "docker:down": "./down.sh",
+    "docker:logs": "./logs.sh",
+    "docker:test": "./test.sh",
+    "mark": "./mark.sh",
+    "tag": "node --env-file=.env scripts/tag-image.mjs",
+    "detect": ".venv-detect/bin/python scripts/detect_cars.py",
+    "detect:setup": "python3 -m venv .venv-detect && .venv-detect/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision && .venv-detect/bin/pip install ultralytics",
+    "worker": "node --env-file=.env src/worker.js",
+    "docker:analyze": "./analyze.sh"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

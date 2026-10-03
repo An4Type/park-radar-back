@@ -1,0 +1,90 @@
+[
+  {
+    "id": "krakow-plac-wszystkich-swietych-live",
+    "name": "Kraków — Plac Wszystkich Świętych",
+    "enabled": false,
+    "url": "https://www.webcamera.pl/kamera/krakow-plac-wszystkich-swietych/",
+    "sourceUrl": "https://www.webcamera.pl/kamera/krakow-plac-wszystkich-swietych/",
+    "description": "Experimental public live player: adverts can obscure the video and transparent ad iframes can fail obstruction checks. Use the enabled official still widget for regular captures.",
+    "selector": "#stream-player",
+    "readySelector": "#video",
+    "mediaType": "video",
+    "clickSelectors": [
+      "button:has-text('Zaakceptuj wszystko'):visible, button:has-text('Accept All'):visible",
+      ".stream-player__main-button"
+    ],
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "timeoutMs": 60000,
+    "settleMs": 5000,
+    "attempts": 2,
+    "maxCaptures": 288,
+    "startPlayback": false
+  },
+  {
+    "id": "krakow-nowa-huta",
+    "name": "Kraków — Nowa Huta, Plac Centralny",
+    "enabled": true,
+    "url": "https://imageserver.webcamera.pl/umiesc/krakow-nowa-huta",
+    "sourceUrl": "https://www.webcamera.pl/kamera/krakow-nowa-huta/umiesc",
+    "description": "Current public square/street view when checked on 2026-10-03. Parked cars are visible along the receding street at upper left, but individual bays are distant; validate region visibility before occupancy analysis.",
+    "selector": ".wc-widget",
+    "readySelector": "img.wc-image",
+    "mediaType": "image",
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "timeoutMs": 30000,
+    "settleMs": 1000,
+    "attempts": 2,
+    "maxMediaAgeSeconds": 900,
+    "maxCaptures": 288
+  },
+  {
+    "id": "krakow-szeroka",
+    "name": "Kraków — ulica Szeroka, Kazimierz",
+    "enabled": false,
+    "url": "https://imageserver.webcamera.pl/umiesc/krakow-kazimierz-szeroka",
+    "sourceUrl": "https://krakow-kazimierz-szeroka.webcamera.pl/umiesc",
+    "description": "Parking prototype only: public street view with visible marked bays. On 2026-10-03 the widget image had Last-Modified 2025-02-19; do not use as current parking availability.",
+    "selector": ".wc-widget",
+    "readySelector": "img.wc-image",
+    "mediaType": "image",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "timeoutMs": 30000,
+    "settleMs": 1000,
+    "attempts": 2,
+    "maxMediaAgeSeconds": 900,
+    "maxCaptures": 288
+  },
+  {
+    "id": "krakow-agh-stream1",
+    "name": "Kraków — AGH (stream 1)",
+    "enabled": true,
+    "url": "http://live.uci.agh.edu.pl/video/stream1.shtml",
+    "sourceUrl": "http://live.uci.agh.edu.pl/video/stream1.shtml",
+    "description": "Public AGH university camera, fixed view of a street with kerbside parked cars; no marked bays; a flag obstructs the right foreground.",
+    "selector": "video",
+    "readySelector": "video",
+    "mediaType": "video",
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "timeoutMs": 45000,
+    "settleMs": 3000,
+    "attempts": 2,
+    "maxCaptures": 288,
+    "parkingAreas": [
+      { "id": "area-5", "points": [[0.3285, 0.2193], [0.3608, 0.2012], [0.4041, 0.3278], [0.3582, 0.3504], [0.3268, 0.2208]], "capacity": 5 },
+      { "id": "area-2", "points": [[0.4278, 0.5433], [0.5458, 0.9895], [0.7572, 0.9895], [0.5085, 0.5177], [0.4295, 0.5388]], "capacity": 2 },
+      { "id": "area-3", "points": [[0.5764, 0.4017], [0.5781, 0.3097], [0.708, 0.3067], [0.7046, 0.4002], [0.5756, 0.4002]], "capacity": 1 }
+    ]
+  }
+]

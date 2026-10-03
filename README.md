@@ -1,6 +1,6 @@
 # Park Radar backend MVP
 
-PostgreSQL/PostGIS stores parking state. Three identical worker containers claim parking records with database leases and update them. An Express API reads that state for mobile map clients. Mock mode runs without video streams or a recognition service.
+PostgreSQL/PostGIS stores parking state. An Express API reads that state for mobile map clients. One camera worker container per camera (`apps/camera-worker`) captures a public camera, counts cars in hand-marked parking areas with a vision model and logs the result. The camera workers do not write to the database yet.
 
 ## Requirements and quick start
 
@@ -8,11 +8,11 @@ PostgreSQL/PostGIS stores parking state. Three identical worker containers claim
 - Free host port 3000
 
 ```bash
-cp .env.example .env
+cp .env.example .env   # then set OPENAI_API_KEY in .env
 docker compose up --build
 ```
 
-The API waits for a healthy database, applies the checked-in migration, and seeds five Poznań parking lots before listening. Workers start after the API health check. Only the API port is exposed. Startup may take longer the first time because the worker image includes Chromium.
+The API waits for a healthy database, applies the checked-in migration, and seeds five Poznań parking lots before listening. Camera workers start with the stack. Only the API port is exposed. Startup may take longer the first time because the worker image includes Chromium.
 The PostGIS image runs as `linux/amd64`, so Docker Desktop may emulate it on Apple Silicon.
 
 ```bash
@@ -28,7 +28,8 @@ The first response should report `{"status":"ok","database":"connected"}`. The B
 | Path | Responsibility |
 | --- | --- |
 | `apps/api` | Express routes, validation, DTOs, PostGIS BBOX query |
-| `apps/worker` | Lease coordination, monitoring loop, Playwright capture, mock recognition |
+| `apps/camera-worker` | Standalone JavaScript worker: capture, parking areas, vision-model count, logs per camera (cameras in `config/cameras.json`; frames are discarded after analysis, only the logs remain) |
+| `apps/worker` (not started by Compose) | Lease coordination, monitoring loop, Playwright capture, mock recognition |
 | `packages/database` | Prisma schema, SQL migration, seed, database client |
 | `packages/shared` | Shared parking types, BBOX validation, structured logs |
 | `tests` | Unit, API, and optional live database tests |
@@ -53,8 +54,8 @@ docker compose exec api node dist/packages/database/prisma/seed.js
 Seeding is idempotent and preserves the current occupancy and recognition fields of existing seeded records. To inspect workers or stop one:
 
 ```bash
-docker compose logs -f worker-1 worker-2 worker-3
-docker compose stop worker-1
+docker compose logs -f camera-krakow-agh-stream1
+docker compose stop camera-krakow-agh-stream1
 ```
 
 Workers use a single SQL `UPDATE` with `FOR UPDATE SKIP LOCKED` to atomically claim one unleased, enabled parking record. Every monitor has its own loop; the worker renews all its leases periodically. Writes require a still-valid lease owned by that worker. If a worker stops without releasing a lease, another worker with capacity can claim it after expiry. A graceful stop releases leases immediately.

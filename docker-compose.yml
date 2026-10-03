@@ -1,20 +1,27 @@
-x-worker-environment: &worker-environment
-  DATABASE_URL: postgresql://${POSTGRES_USER:-parking}:${POSTGRES_PASSWORD:-parking_dev_password}@postgres:5432/${POSTGRES_DB:-parking}
-
-x-worker: &worker
+x-camera-worker: &camera-worker
   build:
-    context: .
-    dockerfile: apps/worker/Dockerfile
-  image: park-radar-worker:local
+    context: apps/camera-worker
+  image: park-radar-camera-worker:local
   init: true
   shm_size: 1gb
   env_file: .env
-  environment: *worker-environment
-  depends_on:
-    postgres:
-      condition: service_healthy
-    api:
-      condition: service_healthy
+  environment: &camera-worker-environment
+    CAMERAS_FILE: /app/config/cameras.json
+    OUTPUT_DIR: /app/screenshots
+  volumes:
+    - ./apps/camera-worker/config:/app/config:ro
+  # Scratch space only: the worker deletes every frame after analysing it.
+  tmpfs:
+    - /app/screenshots:uid=${LOCAL_UID:-1000},gid=${LOCAL_GID:-1000}
+  stop_grace_period: 180s
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
   restart: unless-stopped
 
 services:
@@ -56,21 +63,12 @@ services:
       retries: 15
     restart: unless-stopped
 
-  worker-1:
-    <<: *worker
+  # One worker per camera; add another service with its own CAMERA_ID for each additional camera.
+  camera-krakow-agh-stream1:
+    <<: *camera-worker
     environment:
-      <<: *worker-environment
-      WORKER_ID: worker-1
-  worker-2:
-    <<: *worker
-    environment:
-      <<: *worker-environment
-      WORKER_ID: worker-2
-  worker-3:
-    <<: *worker
-    environment:
-      <<: *worker-environment
-      WORKER_ID: worker-3
+      <<: *camera-worker-environment
+      CAMERA_ID: krakow-agh-stream1
 
   test:
     profiles: [test]
