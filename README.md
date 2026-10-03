@@ -83,3 +83,90 @@ Alternatively, run `RUN_DB_TESTS=1 npm test` on the host with `DATABASE_URL` set
 ## Connecting the real recognition implementation
 
 The seam is `RecognitionProvider.analyze(image: Buffer)` in `apps/worker/src/recognition.ts`. Create an adapter for the existing recognition code, select it when constructing `ParkingMonitor`, and map its output to `{ occupiedSpaces, confidence?, metadata? }`. `validateRecognition` rejects negative or fractional counts, invalid confidence, and malformed metadata; counts above capacity are clamped and logged. Workers mark capture problems `STREAM_ERROR`, analysis problems `RECOGNITION_ERROR`, and successful results `ACTIVE`. They retry with bounded backoff. Neither the mobile app nor API communicates directly with workers.
+
+## Railway deployment (GitHub)
+
+Railway does not run this repository's Compose file as one application. Create three
+services in one Railway project instead:
+
+| Railway service | Source | Public network | Purpose |
+| --- | --- | --- | --- |
+| `postgis` | Railway **PostGIS** template | No | Persistent database and spatial extension |
+| `api` | This GitHub repository | Yes | HTTP API and database migrations |
+| `worker` | This GitHub repository | No | Background parking monitor |
+
+Use the **PostGIS** template, not Railway's plain PostgreSQL template. The first
+migration executes `CREATE EXTENSION postgis` and creates a `geometry` column, so a
+plain PostgreSQL image will fail during migration. Attach the template's persistent
+volume using its default configuration and enable backups for production.
+
+### API service
+
+1. Create an empty Railway project, add the PostGIS template, and name its service
+   `postgis`.
+2. Add a GitHub service named `api`, connected to the `main` branch. If this project
+   is pushed as part of a larger repository, set **Root Directory** to
+   `/park-radar-back`; otherwise leave it at `/`.
+3. Railway detects the root `Dockerfile`. Do not set a custom build or start command:
+   the image applies Prisma migrations, performs the idempotent seed, then starts the
+   API.
+4. In **Variables**, add the following values (the first value is a Railway reference,
+   not a literal connection string):
+
+   ```dotenv
+   DATABASE_URL=${{postgis.DATABASE_URL}}
+   SERVICE_ROLE=api
+   NODE_ENV=production
+   WORKER_MODE=mock
+   RECOGNITION_PROVIDER=mock
+   ```
+
+5. In **Settings**, set the healthcheck path to `/health`, set restart policy to
+   `ON_FAILURE`, and generate a public domain. Railway supplies `PORT`; the API binds
+   to it automatically.
+
+The Docker image intentionally performs migration and seed only for `SERVICE_ROLE=api`.
+That makes a failed migration fail the API deployment instead of exposing an API with
+an incompatible schema.
+
+### Worker service
+
+Create a second GitHub service named `worker`, connected to the same branch and root
+directory. It uses the same Docker image but starts a different process:
+
+```dotenv
+DATABASE_URL=${{postgis.DATABASE_URL}}
+SERVICE_ROLE=worker
+NODE_ENV=production
+WORKER_MODE=mock
+RECOGNITION_PROVIDER=mock
+MAX_PARKINGS_PER_WORKER=5
+WORKER_LEASE_SECONDS=30
+WORKER_HEARTBEAT_SECONDS=10
+CAPTURE_INTERVAL_SECONDS=5
+```
+
+Do not generate a public domain or configure an HTTP healthcheck for `worker`; it is
+not an HTTP service. Set its restart policy to `ALWAYS`. A single worker with
+`MAX_PARKINGS_PER_WORKER=5` covers the five seeded lots. For more lots or redundancy,
+add worker replicas and tune that limit; database leases prevent two workers from
+updating the same parking record.
+
+### GitHub autodeploy and verification
+
+Enable autodeploy for `main` on both GitHub services. If the repository is an
+organization/private repository, make sure the Railway GitHub App has access and at
+least one Railway project member has contributor access. Every push then rebuilds the
+same Dockerfile for both services.
+
+After the first API deployment completes, verify its generated domain:
+
+```bash
+curl https://<api-domain>/health
+curl 'https://<api-domain>/api/parking?minLon=16&minLat=52&maxLon=18&maxLat=53'
+```
+
+The health endpoint must return `{"status":"ok","database":"connected"}`. API
+logs should show migration/seed completion; worker logs should show `parking_claimed`.
+Keep credentials exclusively in Railway Variables—do not commit a production `.env`
+file.
