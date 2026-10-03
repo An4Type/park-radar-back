@@ -1,0 +1,91 @@
+x-worker-environment: &worker-environment
+  DATABASE_URL: postgresql://${POSTGRES_USER:-parking}:${POSTGRES_PASSWORD:-parking_dev_password}@postgres:5432/${POSTGRES_DB:-parking}
+
+x-worker: &worker
+  build:
+    context: .
+    dockerfile: apps/worker/Dockerfile
+  image: park-radar-worker:local
+  init: true
+  shm_size: 1gb
+  env_file: .env
+  environment: *worker-environment
+  depends_on:
+    postgres:
+      condition: service_healthy
+    api:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-parking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-parking_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-parking}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: park-radar-api:local
+    env_file: .env
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-parking}:${POSTGRES_PASSWORD:-parking_dev_password}@postgres:5432/${POSTGRES_DB:-parking}
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "npx prisma migrate deploy && node dist/packages/database/prisma/seed.js && node dist/apps/api/src/index.js"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  worker-1:
+    <<: *worker
+    environment:
+      <<: *worker-environment
+      WORKER_ID: worker-1
+  worker-2:
+    <<: *worker
+    environment:
+      <<: *worker-environment
+      WORKER_ID: worker-2
+  worker-3:
+    <<: *worker
+    environment:
+      <<: *worker-environment
+      WORKER_ID: worker-3
+
+  test:
+    profiles: [test]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: build
+    env_file: .env
+    environment:
+      RUN_DB_TESTS: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-parking}:${POSTGRES_PASSWORD:-parking_dev_password}@postgres:5432/${POSTGRES_DB:-parking}
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["npm", "test"]
+
+volumes:
+  postgres_data:

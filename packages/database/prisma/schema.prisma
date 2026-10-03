@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ParkingStatus {
+  ACTIVE
+  OFFLINE
+  STREAM_ERROR
+  RECOGNITION_ERROR
+  DISABLED
+}
+
+model Parking {
+  id                    String        @id @default(uuid()) @db.Uuid
+  name                  String
+  address               String
+  latitude              Float
+  longitude             Float
+  totalSpaces           Int
+  occupiedSpaces        Int           @default(0)
+  status                ParkingStatus @default(ACTIVE)
+  streamUrl             String?
+  recognitionConfidence Float?
+  recognitionData       Json?
+  lastRecognizedAt      DateTime?     @db.Timestamptz(3)
+  workerId              String?
+  workerLeaseUntil      DateTime?     @db.Timestamptz(3)
+  createdAt             DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@index([status, workerLeaseUntil])
+  @@index([workerId, workerLeaseUntil])
+}
