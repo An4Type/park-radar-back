@@ -86,7 +86,23 @@ Alternatively, run `RUN_DB_TESTS=1 npm test` on the host with `DATABASE_URL` set
 
 The seam is `RecognitionProvider.analyze(image: Buffer)` in `apps/worker/src/recognition.ts`. Create an adapter for the existing recognition code, select it when constructing `ParkingMonitor`, and map its output to `{ occupiedSpaces, confidence?, metadata? }`. `validateRecognition` rejects negative or fractional counts, invalid confidence, and malformed metadata; counts above capacity are clamped and logged. Workers mark capture problems `STREAM_ERROR`, analysis problems `RECOGNITION_ERROR`, and successful results `ACTIVE`. They retry with bounded backoff. Neither the mobile app nor API communicates directly with workers.
 
-## Railway deployment (GitHub)
+## Cloudflare Tunnel deployment (current)
+
+The production setup is this Compose stack exposed through a Cloudflare Tunnel; nothing else is public.
+
+1. In the Cloudflare dashboard (Zero Trust → Networks → Tunnels) create a tunnel and copy its token into `TUNNEL_TOKEN` in `.env`.
+2. Add a public hostname for the tunnel pointing at `http://api:3000`.
+3. Start or update the stack:
+
+```bash
+docker compose --profile tunnel up -d --build
+```
+
+To ship a change, rebuild the affected service, for example `docker compose up -d --build api`. The API applies pending migrations on startup. Pushing to GitHub does not deploy anything.
+
+## Railway deployment (GitHub) — not in use
+
+The section below is kept for reference; we no longer deploy this way.
 
 Railway does not run this repository's Compose file as one application. Create three
 services in one Railway project instead:

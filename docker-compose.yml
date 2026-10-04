@@ -71,7 +71,7 @@ services:
       <<: *camera-worker-environment
       CAMERA_ID: krakow-agh-stream1
 
-  # Plan B public access: `docker compose --profile tunnel up -d`.
+  # Public access via Cloudflare Tunnel: `docker compose --profile tunnel up -d`.
   # In the Cloudflare dashboard, point the public hostname at http://api:3000.
   cloudflared:
     profiles: [tunnel]
