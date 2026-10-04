@@ -26,8 +26,6 @@ const zoneSchema = {
     latitude: { type: 'number' },
     longitude: { type: 'number' },
     level: { type: 'string', enum: ['NONE', 'FEW', 'MANY'], description: 'Rough amount of free parking' },
-    createdAt: { type: 'string', format: 'date-time' },
-    expiresAt: { type: 'string', format: 'date-time', nullable: true, description: 'null = never expires' },
   },
 };
 const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, example: '00000000-0000-4000-8000-000000000006' };
@@ -95,18 +93,18 @@ export const openApiSpec = {
         summary: 'List active user-reported zones, optionally within a bounding box',
         description: 'Zones come from user reports, not cameras, and disappear when they expire. Provide all four bbox parameters or none.',
         parameters: [bbox('minLon', 19.8), bbox('minLat', 49.95), bbox('maxLon', 20.1), bbox('maxLat', 50.15)],
-        responses: { 200: { description: 'Active zones', content: { 'application/json': { schema: { type: 'object', properties: { zones: { type: 'array', items: zoneSchema } } } } } }, 400: error },
+        responses: { 200: { description: 'Active zones', content: { 'application/json': { schema: { type: 'object', properties: { zones: { type: 'array', items: { allOf: [zoneSchema, { type: 'object', properties: { expiresAt: { type: 'string', format: 'date-time', nullable: true, description: 'When the zone stops being listed; null = never expires' } } }] } } } } } } }, 400: error },
       },
       post: {
         tags: ['Clients'],
         summary: 'Report free parking at a location',
-        description: 'Public, no authentication. Creates a zone that expires after the configured lifespan (`ZONE_TTL_MINUTES`, default 30). If an active zone is within ZONE_MERGE_METERS (default 6) of the reported point, the level of that zone is updated and its lifespan restarted instead; its position does not change.',
+        description: 'Public, no authentication. Creates a zone that expires after the optional `lifespan` (minutes, up to 1440), or after the server default (`ZONE_TTL_MINUTES`, default 30) when omitted. If an active zone is within ZONE_MERGE_METERS (default 6) of the reported point, the level of that zone is updated and its lifespan restarted instead; its position does not change.',
         requestBody: {
           required: true,
           content: { 'application/json': { schema: {
             type: 'object',
             required: ['latitude', 'longitude', 'level'],
-            properties: { latitude: { type: 'number' }, longitude: { type: 'number' }, level: { type: 'string', enum: ['none', 'few', 'many'] } },
+            properties: { latitude: { type: 'number' }, longitude: { type: 'number' }, level: { type: 'string', enum: ['none', 'few', 'many'] }, lifespan: { type: 'number', exclusiveMinimum: 0, maximum: 1440, description: 'Optional. Minutes the zone stays visible; defaults to ZONE_TTL_MINUTES (30).' } },
             example: { latitude: 50.0639, longitude: 19.9241, level: 'few' },
           } } },
         },

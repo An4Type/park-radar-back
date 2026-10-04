@@ -1,6 +1,6 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import { InputError, cameraDto, parkingDto, parseBbox, parseOccupancyReport, parseZone, zoneDto } from '../../../packages/shared/src/parking.js';
+import { InputError, cameraDto, parkingDto, parseBbox, parseOccupancyReport, parseZone, parseZoneLifespan, zoneDto } from '../../../packages/shared/src/parking.js';
 import { errorMessage, log } from '../../../packages/shared/src/log.js';
 import { docsHtml, openApiSpec } from './openapi.js';
 import type { ParkingRepository } from './repository.js';
@@ -60,12 +60,13 @@ export function createApp(repository: ParkingRepository, options: { ingestToken?
   // Public, unauthenticated: user-reported zones are separate from camera-counted parking and expire on their own.
   app.get('/api/zones', async (request, response) => {
     const zones = await repository.listZones(parseBbox(request.query));
-    response.json({ zones: zones.map(zoneDto) });
+    response.json({ zones: zones.map((zone) => ({ ...zoneDto(zone), expiresAt: zone.expiresAt?.toISOString() ?? null })) });
   });
 
   app.post('/api/zones', express.json({ limit: '1kb' }), async (request, response) => {
-    const { zone, created } = await repository.createZone(parseZone(request.body), {
-      ttlSeconds: options.zoneTtlSeconds ?? defaultZoneTtlSeconds,
+    const input = parseZone(request.body);
+    const { zone, created } = await repository.createZone(input, {
+      ttlSeconds: parseZoneLifespan(request.body) ?? options.zoneTtlSeconds ?? defaultZoneTtlSeconds,
       mergeMeters: options.zoneMergeMeters ?? defaultZoneMergeMeters,
     });
     // A nearby report updates the existing zone, so the response says which happened.

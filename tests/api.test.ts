@@ -98,7 +98,7 @@ describe('reported zones', () => {
   it('lists active zones, optionally within a bbox', async () => {
     const result = await request(app).get('/api/zones?minLon=19.8&minLat=49.95&maxLon=20.1&maxLat=50.15');
     expect(result.status).toBe(200);
-    expect(result.body.zones).toEqual([{ ...sampleZone, createdAt: '2026-10-04T10:00:00.000Z', expiresAt: '2026-10-04T10:30:00.000Z' }]);
+    expect(result.body.zones).toEqual([{ id: sampleZone.id, latitude: sampleZone.latitude, longitude: sampleZone.longitude, level: sampleZone.level, expiresAt: '2026-10-04T10:30:00.000Z' }]);
     expect(repository.listZones).toHaveBeenCalledWith({ minLon: 19.8, minLat: 49.95, maxLon: 20.1, maxLat: 50.15 });
     expect((await request(app).get('/api/zones?minLon=19.8')).status).toBe(400);
   });
@@ -120,6 +120,11 @@ describe('reported zones', () => {
     expect(repository.createZone).toHaveBeenLastCalledWith(expect.anything(), { ttlSeconds: 90, mergeMeters: 10 });
   });
 
+  it('uses the lifespan given in the report, in minutes', async () => {
+    await request(app).post('/api/zones').send({ ...body, lifespan: 5 });
+    expect(repository.createZone).toHaveBeenLastCalledWith(expect.anything(), { ttlSeconds: 300, mergeMeters: 6 });
+  });
+
   it('answers 200 when a nearby zone was updated instead of created', async () => {
     const result = await request(app).post('/api/zones').send(body);
     expect(result.status).toBe(200);
@@ -127,7 +132,7 @@ describe('reported zones', () => {
   });
 
   it('validates the report', async () => {
-    for (const bad of [{}, { ...body, level: 'lots' }, { ...body, latitude: 91 }, { ...body, longitude: '19.9' }, { latitude: 50, level: 'few' }]) {
+    for (const bad of [{}, { ...body, level: 'lots' }, { ...body, latitude: 91 }, { ...body, longitude: '19.9' }, { latitude: 50, level: 'few' }, { ...body, lifespan: 0 }, { ...body, lifespan: -5 }, { ...body, lifespan: '5' }, { ...body, lifespan: 1441 }]) {
       const result = await request(app).post('/api/zones').send(bad);
       expect(result.status).toBe(400);
       expect(result.body.error).toBe('INVALID_ZONE');

@@ -140,8 +140,20 @@ export function parseZone(body: unknown): ZoneInput {
   return { latitude, longitude, level: parsed };
 }
 
+export const maxZoneLifespanMinutes = 24 * 60;
+
+/** Optional `lifespan` in minutes (positive, at most 24 hours) from a zone report; returns seconds, or undefined when omitted. */
+export function parseZoneLifespan(body: unknown): number | undefined {
+  const { lifespan } = body as Record<string, unknown>;
+  if (lifespan === undefined || lifespan === null) return undefined;
+  if (typeof lifespan !== 'number' || !Number.isFinite(lifespan) || lifespan <= 0 || lifespan > maxZoneLifespanMinutes) {
+    throw new InputError('INVALID_ZONE', `lifespan must be a number of minutes greater than 0 and at most ${maxZoneLifespanMinutes}.`);
+  }
+  return Math.round(lifespan * 60);
+}
+
 export function zoneDto(zone: ZoneRecord) {
-  return { id: zone.id, latitude: zone.latitude, longitude: zone.longitude, level: zone.level, createdAt: zone.createdAt.toISOString(), expiresAt: zone.expiresAt?.toISOString() ?? null };
+  return { id: zone.id, latitude: zone.latitude, longitude: zone.longitude, level: zone.level };
 }
 
 export interface CameraRecord {
