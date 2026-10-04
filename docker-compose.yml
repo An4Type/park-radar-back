@@ -78,13 +78,12 @@ services:
     image: park-radar-showcase:local
     init: true
     shm_size: 1gb
+    # Own env file (showcase/.env, see showcase/.env.example); separate from the root .env.
+    env_file:
+      - path: showcase/.env
+        required: false
     environment:
       PORT: 3000
-      CAPTURE_INTERVAL_SECONDS: ${SHOWCASE_CAPTURE_INTERVAL_SECONDS:-60}
-      CAMERA_URL: ${SHOWCASE_CAMERA_URL:-http://live.uci.agh.edu.pl/video/stream1.shtml}
-      CAMERA_MEDIA_TYPE: ${SHOWCASE_CAMERA_MEDIA_TYPE:-video}
-      CAMERA_SELECTOR: ${SHOWCASE_CAMERA_SELECTOR:-video}
-      CAMERA_READY_SELECTOR: ${SHOWCASE_CAMERA_READY_SELECTOR:-video}
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
