@@ -94,7 +94,7 @@ The seam is `RecognitionProvider.analyze(image: Buffer)` in `apps/worker/src/rec
 The production setup is this Compose stack exposed through a Cloudflare Tunnel; nothing else is public.
 
 1. In the Cloudflare dashboard (Zero Trust → Networks → Tunnels) create a tunnel and copy its token into `TUNNEL_TOKEN` in `.env`.
-2. Add a public hostname for the tunnel pointing at `http://api:3000`.
+2. Add a public hostname for the tunnel pointing at `http://router:80` (the Caddy router; it forwards `/showcase/*` to the showcase container and everything else to `api:3000`).
 3. Start or update the stack:
 
 ```bash

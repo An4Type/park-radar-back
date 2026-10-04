@@ -71,8 +71,40 @@ services:
       <<: *camera-worker-environment
       CAMERA_ID: krakow-agh-stream1
 
+  # AI showcase (separate repo cloned into ./showcase, git-ignored), served at /showcase.
+  showcase:
+    build:
+      context: showcase
+    image: park-radar-showcase:local
+    init: true
+    shm_size: 1gb
+    environment:
+      PORT: 3000
+      CAPTURE_INTERVAL_SECONDS: ${SHOWCASE_CAPTURE_INTERVAL_SECONDS:-60}
+      CAMERA_URL: ${SHOWCASE_CAMERA_URL:-http://live.uci.agh.edu.pl/video/stream1.shtml}
+      CAMERA_MEDIA_TYPE: ${SHOWCASE_CAMERA_MEDIA_TYPE:-video}
+      CAMERA_SELECTOR: ${SHOWCASE_CAMERA_SELECTOR:-video}
+      CAMERA_READY_SELECTOR: ${SHOWCASE_CAMERA_READY_SELECTOR:-video}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+
+  # Path router: /showcase/* -> showcase, everything else -> api. Config in router/Caddyfile.
+  router:
+    image: caddy:2-alpine
+    volumes:
+      - ./router/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${ROUTER_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+      showcase:
+        condition: service_started
+    restart: unless-stopped
+
   # Public access via Cloudflare Tunnel: `docker compose --profile tunnel up -d`.
-  # In the Cloudflare dashboard, point the public hostname at http://api:3000.
+  # In the Cloudflare dashboard, point the public hostname at http://router:80.
   cloudflared:
     profiles: [tunnel]
     image: cloudflare/cloudflared:latest
@@ -80,8 +112,8 @@ services:
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
     depends_on:
-      api:
-        condition: service_healthy
+      router:
+        condition: service_started
     restart: unless-stopped
 
   test:

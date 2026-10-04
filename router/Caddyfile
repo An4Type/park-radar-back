@@ -1,0 +1,12 @@
+# Path-based router in front of every public service.
+# /showcase/*  -> showcase container (prefix stripped, so /showcase/api/detection -> /api/detection)
+# everything else -> main API
+:80 {
+	handle_path /showcase/* {
+		reverse_proxy showcase:3000
+	}
+
+	handle {
+		reverse_proxy api:3000
+	}
+}

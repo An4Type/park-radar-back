@@ -7,3 +7,6 @@ packages/database/generated/
 
 # nested workspace repo (camera worker) with its own git history
 workspace/
+
+# AI showcase repo (An4Type/park-radar-ai-show-case), cloned separately
+showcase/
