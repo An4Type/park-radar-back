@@ -1,6 +1,6 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import { InputError, cameraDto, parkingDto, parseBbox, parseOccupancyReport } from '../../../packages/shared/src/parking.js';
+import { InputError, cameraDto, parkingDto, parseBbox, parseFeedback, parseOccupancyReport } from '../../../packages/shared/src/parking.js';
 import { errorMessage, log } from '../../../packages/shared/src/log.js';
 import { docsHtml, openApiSpec } from './openapi.js';
 import type { ParkingRepository } from './repository.js';
@@ -53,6 +53,15 @@ export function createApp(repository: ParkingRepository, options: { ingestToken?
     const parking = await repository.recordOccupancy(id, parseOccupancyReport(request.body));
     if (!parking) return response.status(404).json({ error: 'NOT_FOUND', message: 'Parking lot not found.' });
     return response.json({ parking: parkingDto(parking) });
+  });
+
+  // Public, unauthenticated: a user tells us whether the free-space estimate was right.
+  app.post('/api/parking/:id/feedback', express.json({ limit: '1kb' }), async (request, response) => {
+    const id = request.params.id;
+    if (!id || !uuidPattern.test(id)) throw new InputError('INVALID_ID', 'Parking ID must be a UUID.');
+    const parking = await repository.recordFeedback(id, parseFeedback(request.body));
+    if (!parking) return response.status(404).json({ error: 'NOT_FOUND', message: 'Parking lot not found.' });
+    return response.status(201).json({ parking: parkingDto(parking) });
   });
 
   // Camera configuration for a worker, which is started with only a camera id.

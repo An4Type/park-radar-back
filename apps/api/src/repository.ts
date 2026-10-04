@@ -1,4 +1,4 @@
-import type { Bbox, CameraRecord, OccupancyReport, ParkingRecord } from '../../../packages/shared/src/parking.js';
+import { feedbackOccupiedDelta, freeSpaces, type Bbox, type CameraRecord, type FeedbackAnswer, type OccupancyReport, ParkingRecord } from '../../../packages/shared/src/parking.js';
 import { prisma } from '../../../packages/database/src/client.js';
 
 export interface ParkingRepository {
@@ -8,6 +8,8 @@ export interface ParkingRepository {
   getCamera(id: string): Promise<CameraRecord | null>;
   /** Stores a worker result; returns null when the parking does not exist. */
   recordOccupancy(id: string, report: OccupancyReport): Promise<ParkingRecord | null>;
+  /** Stores a user's answer and adjusts the occupancy estimate; returns null when the parking does not exist. */
+  recordFeedback(id: string, answer: FeedbackAnswer): Promise<ParkingRecord | null>;
 }
 
 export const parkingRepository: ParkingRepository = {
@@ -37,6 +39,16 @@ export const parkingRepository: ParkingRepository = {
         recognitionData: (report.data ?? undefined) as object | undefined,
         lastRecognizedAt: report.recognizedAt,
       },
+    });
+  },
+  async recordFeedback(id, answer) {
+    return prisma.$transaction(async (tx) => {
+      const parking = await tx.parking.findUnique({ where: { id } });
+      if (!parking) return null;
+      await tx.parkingFeedback.create({ data: { parkingId: id, answer, estimatedFreeSpaces: freeSpaces(parking.totalSpaces, parking.occupiedSpaces) } });
+      // Single atomic UPDATE so concurrent answers don't overwrite each other; the count stays within 0..totalSpaces.
+      await tx.$executeRaw`UPDATE "Parking" SET "occupiedSpaces" = LEAST("totalSpaces", GREATEST(0, "occupiedSpaces" + ${feedbackOccupiedDelta[answer]})), "updatedAt" = now() WHERE "id" = ${id}::uuid`;
+      return tx.parking.findUnique({ where: { id } });
     });
   },
   async getCamera(id) { return (await prisma.camera.findUnique({ where: { id } })) as CameraRecord | null; },

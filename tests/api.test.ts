@@ -2,6 +2,7 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../apps/api/src/app.js';
 import type { ParkingRepository } from '../apps/api/src/repository.js';
+import { feedbackOccupiedDelta, type FeedbackAnswer } from '../packages/shared/src/parking.js';
 import { sampleParking } from './fixtures.js';
 
 const sampleCamera = {
@@ -15,6 +16,7 @@ const repository: ParkingRepository = {
   list: vi.fn(async (bbox) => bbox && bbox.maxLon < 16.9 ? [] : [sampleParking]),
   get: vi.fn(async (id) => id === sampleParking.id ? sampleParking : null),
   ping: vi.fn(async () => undefined),
+  recordFeedback: vi.fn(async (id: string, answer: FeedbackAnswer) => id === sampleParking.id ? { ...sampleParking, occupiedSpaces: sampleParking.occupiedSpaces + feedbackOccupiedDelta[answer] } : null),
   getCamera: vi.fn(async (id) => id === 'cam-1' ? sampleCamera : null),
   recordOccupancy: vi.fn(async (id, report) => id === sampleParking.id ? { ...sampleParking, occupiedSpaces: report.occupiedSpaces ?? sampleParking.occupiedSpaces } : null),
 };
@@ -78,6 +80,28 @@ describe('occupancy ingestion', () => {
     expect((await request(ingestApp).post(url).set(auth).send({ status: 'ACTIVE', occupiedSpaces: -1 })).status).toBe(400);
     expect((await request(ingestApp).post(url).set(auth).set('Content-Type', 'application/json').send('{bad')).status).toBe(400);
     expect((await request(ingestApp).post('/api/parking/00000000-0000-4000-8000-000000000099/occupancy').set(auth).send(body)).status).toBe(404);
+  });
+});
+
+describe('parking feedback', () => {
+  const url = `/api/parking/${sampleParking.id}/feedback`;
+
+  it('records an answer without authentication', async () => {
+    const result = await request(app).post(url).send({ answer: 'less' });
+    expect(result.status).toBe(201);
+    expect(repository.recordFeedback).toHaveBeenCalledWith(sampleParking.id, 'LESS');
+    expect(result.body.parking.freeSpaces).toBe(sampleParking.totalSpaces - sampleParking.occupiedSpaces - 2);
+  });
+
+  it('maps answers to occupancy changes', () => {
+    expect(feedbackOccupiedDelta).toEqual({ CORRECT: 1, MORE: 0, LESS: 2 });
+  });
+
+  it('validates the answer, id and parking', async () => {
+    expect((await request(app).post(url).send({ answer: 'lots' })).status).toBe(400);
+    expect((await request(app).post(url).send({})).status).toBe(400);
+    expect((await request(app).post('/api/parking/nope/feedback').send({ answer: 'more' })).status).toBe(400);
+    expect((await request(app).post('/api/parking/00000000-0000-4000-8000-000000000099/feedback').send({ answer: 'correct' })).status).toBe(404);
   });
 });
 

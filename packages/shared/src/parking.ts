@@ -87,6 +87,21 @@ export function parseOccupancyReport(body: unknown): OccupancyReport {
   return { status: status as ParkingStatus, occupiedSpaces: occupiedSpaces as number | null, confidence: confidence as number | null, recognizedAt: when, data: data as Record<string, unknown> | null };
 }
 
+export type FeedbackAnswer = 'CORRECT' | 'LESS' | 'MORE';
+
+const feedbackAnswers: Record<string, FeedbackAnswer> = { correct: 'CORRECT', less: 'LESS', more: 'MORE' };
+
+// Every answer means one more car is taking a space (+1 occupied); "more" cancels that out, "less" adds one more.
+export const feedbackOccupiedDelta: Record<FeedbackAnswer, number> = { CORRECT: 1, MORE: 0, LESS: 2 };
+
+/** Accepts `{ "answer": "correct" | "less" | "more" }`. */
+export function parseFeedback(body: unknown): FeedbackAnswer {
+  const answer = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>).answer : undefined;
+  const parsed = typeof answer === 'string' ? feedbackAnswers[answer.toLowerCase()] : undefined;
+  if (!parsed) throw new InputError('INVALID_FEEDBACK', `answer must be one of ${Object.keys(feedbackAnswers).join(', ')}.`);
+  return parsed;
+}
+
 export interface CameraRecord {
   id: string;
   parkingId: string | null;

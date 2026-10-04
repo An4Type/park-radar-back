@@ -16,23 +16,24 @@ enum ParkingStatus {
 }
 
 model Parking {
-  id                    String        @id @default(uuid()) @db.Uuid
+  id                    String            @id @default(uuid()) @db.Uuid
   name                  String
   address               String
   latitude              Float
   longitude             Float
   totalSpaces           Int
-  occupiedSpaces        Int           @default(0)
-  status                ParkingStatus @default(ACTIVE)
+  occupiedSpaces        Int               @default(0)
+  status                ParkingStatus     @default(ACTIVE)
   streamUrl             String?
   recognitionConfidence Float?
   recognitionData       Json?
-  lastRecognizedAt      DateTime?     @db.Timestamptz(3)
+  lastRecognizedAt      DateTime?         @db.Timestamptz(3)
   workerId              String?
-  workerLeaseUntil      DateTime?     @db.Timestamptz(3)
-  createdAt             DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt             DateTime      @updatedAt @db.Timestamptz(3)
+  workerLeaseUntil      DateTime?         @db.Timestamptz(3)
+  createdAt             DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime          @updatedAt @db.Timestamptz(3)
   cameras               Camera[]
+  feedback              ParkingFeedback[]
 
   @@index([status, workerLeaseUntil])
   @@index([workerId, workerLeaseUntil])
@@ -46,34 +47,53 @@ enum MediaType {
 
 // Configuration of one public camera; a camera worker is started with a camera id and loads this row.
 model Camera {
-  id                  String    @id
-  parkingId           String?   @db.Uuid
-  parking             Parking?  @relation(fields: [parkingId], references: [id], onDelete: SetNull)
-  name                String
-  description         String?
-  enabled             Boolean   @default(true)
-  url                 String
-  sourceUrl           String?
-  mediaType           MediaType @default(image)
-  selector            String?
-  readySelector       String?
-  frameSelector       String?
-  clickSelectors      Json      @default("[]")
-  startPlayback       Boolean   @default(true)
-  fullPage            Boolean   @default(false)
-  viewportWidth       Int       @default(1280)
-  viewportHeight      Int       @default(720)
-  timeoutMs           Int       @default(30000)
-  settleMs            Int       @default(1000)
-  attempts            Int       @default(2)
-  maxCaptures         Int       @default(288)
-  maxMediaAgeSeconds  Int       @default(900)
+  id                     String    @id
+  parkingId              String?   @db.Uuid
+  parking                Parking?  @relation(fields: [parkingId], references: [id], onDelete: SetNull)
+  name                   String
+  description            String?
+  enabled                Boolean   @default(true)
+  url                    String
+  sourceUrl              String?
+  mediaType              MediaType @default(image)
+  selector               String?
+  readySelector          String?
+  frameSelector          String?
+  clickSelectors         Json      @default("[]")
+  startPlayback          Boolean   @default(true)
+  fullPage               Boolean   @default(false)
+  viewportWidth          Int       @default(1280)
+  viewportHeight         Int       @default(720)
+  timeoutMs              Int       @default(30000)
+  settleMs               Int       @default(1000)
+  attempts               Int       @default(2)
+  maxCaptures            Int       @default(288)
+  maxMediaAgeSeconds     Int       @default(900)
   // Seconds between captures; null means the worker's CAPTURE_INTERVAL_SECONDS (default 60).
   captureIntervalSeconds Int?
   // Hand-marked polygons: [{ id, points: [[x, y], ...], capacity?, mask? }], coordinates 0–1.
-  parkingAreas        Json      @default("[]")
-  createdAt           DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+  parkingAreas           Json      @default("[]")
+  createdAt              DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @db.Timestamptz(3)
 
   @@index([parkingId])
+}
+
+enum FeedbackAnswer {
+  CORRECT
+  LESS
+  MORE
+}
+
+// A user's answer to "we think N spaces are free": is that right, are there fewer, or are there more.
+model ParkingFeedback {
+  id                  String         @id @default(uuid()) @db.Uuid
+  parkingId           String         @db.Uuid
+  parking             Parking        @relation(fields: [parkingId], references: [id], onDelete: Cascade)
+  answer              FeedbackAnswer
+  // Free spaces we reported at the time of the answer.
+  estimatedFreeSpaces Int
+  createdAt           DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([parkingId, createdAt])
 }

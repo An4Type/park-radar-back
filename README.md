@@ -19,6 +19,8 @@ The PostGIS image runs as `linux/amd64`, so Docker Desktop may emulate it on App
 curl http://localhost:3000/health
 curl 'http://localhost:3000/api/parking?minLon=19.8&minLat=49.95&maxLon=20.1&maxLat=50.15'
 curl http://localhost:3000/api/parking/00000000-0000-4000-8000-000000000001
+# user feedback on the free-space estimate: correct | less | more
+curl -X POST -H 'Content-Type: application/json' -d '{"answer":"less"}' http://localhost:3000/api/parking/00000000-0000-4000-8000-000000000001/feedback
 ```
 
 The first response should report `{"status":"ok","database":"connected"}`. The BBOX response contains `{ "parking": [...] }`; each item includes `totalSpaces`, `occupiedSpaces`, and derived `freeSpaces`. Repeat it after several seconds to see occupancy change.

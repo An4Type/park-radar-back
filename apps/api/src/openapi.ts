@@ -62,6 +62,23 @@ export const openApiSpec = {
         responses: { 200: { description: 'Updated parking lot' }, 400: error, 401: error, 404: error, 503: error },
       },
     },
+    '/api/parking/{id}/feedback': {
+      post: {
+        summary: 'Tell us whether the free-space estimate is right',
+        description: 'Public, no authentication. `correct` = the estimate matches, `less` = fewer spaces are free, `more` = more are free. Every answer assumes one more car is parking, so free spaces change by −1 for `correct`, 0 for `more` and −2 for `less` (never below 0 or above the total). The answer is also stored.',
+        parameters: [idParam],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: {
+            type: 'object',
+            required: ['answer'],
+            properties: { answer: { type: 'string', enum: ['correct', 'less', 'more'] } },
+            example: { answer: 'less' },
+          } } },
+        },
+        responses: { 201: { description: 'Feedback recorded; returns the updated parking lot' }, 400: error, 404: error },
+      },
+    },
     '/api/cameras/{id}': {
       get: {
         summary: 'Get a camera configuration (used by camera workers)',
