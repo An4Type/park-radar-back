@@ -12,12 +12,12 @@ cp .env.example .env   # then set OPENAI_API_KEY in .env
 docker compose up --build
 ```
 
-The API waits for a healthy database, applies the checked-in migration, and seeds five Poznań parking lots before listening. Camera workers start with the stack. Only the API port is exposed. Startup may take longer the first time because the worker image includes Chromium.
+The API waits for a healthy database, applies the checked-in migration, and seeds five mock Kraków parking lots (plus the live AGH one) before listening. Camera workers start with the stack. Only the API port is exposed. Startup may take longer the first time because the worker image includes Chromium.
 The PostGIS image runs as `linux/amd64`, so Docker Desktop may emulate it on Apple Silicon.
 
 ```bash
 curl http://localhost:3000/health
-curl 'http://localhost:3000/api/parking?minLon=16&minLat=52&maxLon=18&maxLat=53'
+curl 'http://localhost:3000/api/parking?minLon=19.8&minLat=49.95&maxLon=20.1&maxLat=50.15'
 curl http://localhost:3000/api/parking/00000000-0000-4000-8000-000000000001
 ```
 
@@ -163,7 +163,7 @@ After the first API deployment completes, verify its generated domain:
 
 ```bash
 curl https://<api-domain>/health
-curl 'https://<api-domain>/api/parking?minLon=16&minLat=52&maxLon=18&maxLat=53'
+curl 'https://<api-domain>/api/parking?minLon=19.8&minLat=49.95&maxLon=20.1&maxLat=50.15'
 ```
 
 The health endpoint must return `{"status":"ok","database":"connected"}`. API

@@ -27,7 +27,7 @@ export const openApiSpec = {
       get: {
         summary: 'List parking lots, optionally within a bounding box',
         description: 'Provide all four bbox parameters or none.',
-        parameters: [bbox('minLon', 16), bbox('minLat', 52), bbox('maxLon', 18), bbox('maxLat', 53)],
+        parameters: [bbox('minLon', 19.8), bbox('minLat', 49.95), bbox('maxLon', 20.1), bbox('maxLat', 50.15)],
         responses: { 200: { description: 'Parking lots', content: { 'application/json': { schema: { type: 'object', properties: { parking: { type: 'array', items: parkingSchema } } } } } }, 400: error },
       },
     },
