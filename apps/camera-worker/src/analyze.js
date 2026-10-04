@@ -57,7 +57,8 @@ export async function prepareInputs(browser, png, areas) {
 }
 
 // Strict structured output: the model can only answer with these fields, so no free text can come back.
-export const REPLY_FORMAT = {
+// With `boxes` each area also lists its vehicles with a box on that area's zoomed crop.
+export const replyFormat = ({ boxes = false } = {}) => ({
   type: 'json_schema',
   name: 'parking_counts',
   strict: true,
@@ -71,33 +72,49 @@ export const REPLY_FORMAT = {
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['id', 'vehicles', 'parked', 'moving', 'confidence'],
+          required: ['id', 'vehicles', 'parked', 'moving', 'confidence', ...(boxes ? ['detections'] : [])],
           properties: {
             id: { type: 'string' },
             vehicles: { type: 'integer' },
             parked: { type: 'integer' },
             moving: { type: 'integer' },
             confidence: { type: 'number' },
+            ...(boxes ? { detections: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['box', 'motion'],
+                properties: {
+                  box: { type: 'array', items: { type: 'number' } },
+                  motion: { type: 'string', enum: ['parked', 'moving'] },
+                },
+              },
+            } } : {}),
           },
         },
       },
       frame_usable: { type: 'boolean' },
     },
   },
-};
+});
+export const REPLY_FORMAT = replyFormat();
 
-export function buildPrompt(areas) {
+const BOX_INSTRUCTIONS = `
+Also add "detections" to every area: one entry per counted vehicle, {"box": [x1, y1, x2, y2], "motion": "parked" | "moving"}. The box tightly encloses the whole vehicle on that area's ZOOMED CROP (not the full frame), as fractions of the crop's width and height: x1,y1 is the top-left corner and x2,y2 the bottom-right, all between 0 and 1. The number of detections must equal "vehicles".`;
+
+export function buildPrompt(areas, { boxes = false } = {}) {
   return `You will see one frame from a fixed parking camera, then one zoomed crop per parking area. In the full frame everything outside the labelled areas is blacked out; each crop is the same area enlarged, with its surroundings blacked out.
 Areas (id, capacity = how many cars fit when full):
 ${areas.map((a) => `- ${a.id}${a.kind && a.kind !== 'regular' ? ` [${a.kind === 'ev' ? 'EV charger' : 'disabled'} spaces]` : ''}${a.capacity ? ` (capacity ${a.capacity})` : ''}`).join('\n')}
 For each area count the separate vehicles inside it, whether parked or moving, and say how many look parked and how many look moving. Use the crop to count precisely and the full frame for context. Cars parked in a row appear as several vehicles close together: count each one, including partly visible ones at the ends of the row. Do not assume an area is full or empty because of its capacity. Return JSON only, with numbers and no commentary or notes:
 {"areas": [{"id": string, "vehicles": number, "parked": number, "moving": number, "confidence": number between 0 and 1}],
  "frame_usable": boolean}
-Count only vehicles you can clearly see. Use frame_usable=false if the areas are obscured. Do not identify people or read licence plates.`;
+Count only vehicles you can clearly see. Use frame_usable=false if the areas are obscured. Do not identify people or read licence plates.${boxes ? BOX_INSTRUCTIONS : ''}`;
 }
 
 // Sends the prompt, the annotated frame and the crops to the OpenAI Responses API.
-export async function askModel({ apiKey, model, prompt, frame, crops, signal }) {
+export async function askModel({ apiKey, model, prompt, frame, crops, signal, format = REPLY_FORMAT }) {
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
   const started = Date.now();
   const response = await fetch('https://api.openai.com/v1/responses', {
@@ -106,7 +123,7 @@ export async function askModel({ apiKey, model, prompt, frame, crops, signal }) 
     signal,
     body: JSON.stringify({
       model,
-      text: { format: REPLY_FORMAT },
+      text: { format },
       max_output_tokens: 4000, // reasoning models spend part of this before answering
       input: [{ role: 'user', content: [
         { type: 'input_text', text: prompt },
@@ -160,9 +177,38 @@ export function interpretReply(reply, areas, media) {
   };
 }
 
-export async function analyzeFrame({ browser, png, camera, media, model = DEFAULT_MODEL, ask }) {
+// Converts the model's crop-relative boxes to fractions of the full frame, so a client can draw them
+// over the captured image. Invalid boxes are dropped rather than guessed.
+export function frameBoxes(detections, crop, { width, height }) {
+  if (!Array.isArray(detections)) return [];
+  const { rect } = crop;
+  return detections.flatMap(({ box, motion } = {}) => {
+    if (!Array.isArray(box) || box.length !== 4 || !box.every(Number.isFinite)) return [];
+    const [x1, y1, x2, y2] = box.map((n) => Math.min(1, Math.max(0, n)));
+    if (x2 <= x1 || y2 <= y1) return [];
+    return [{
+      motion: motion === 'moving' ? 'moving' : 'parked',
+      box: [
+        (rect.x + x1 * rect.width) / width, (rect.y + y1 * rect.height) / height,
+        (rect.x + x2 * rect.width) / width, (rect.y + y2 * rect.height) / height,
+      ].map((n) => Number(n.toFixed(4))),
+    }];
+  });
+}
+
+export async function analyzeFrame({ browser, png, camera, media, model = DEFAULT_MODEL, ask, boxes = false }) {
   const areas = camera.parkingAreas;
   const { frame, crops } = await prepareInputs(browser, png, areas);
-  const { reply, seconds, usage } = await ask({ model, prompt: buildPrompt(areas), frame, crops });
-  return { model, seconds, usage, ...interpretReply(reply, areas, media) };
+  const { reply, seconds, usage } = await ask({
+    model, prompt: buildPrompt(areas, { boxes }), frame, crops, ...(boxes ? { format: replyFormat({ boxes }) } : {}),
+  });
+  const result = { model, seconds, usage, ...interpretReply(reply, areas, media) };
+  if (!boxes) return result;
+  const size = pngSize(png);
+  for (const area of result.areas) {
+    const crop = crops.find((c) => c.id === area.id);
+    const found = Array.isArray(reply?.areas) ? reply.areas.find((a) => a.id === area.id) : undefined;
+    area.detections = crop && found ? frameBoxes(found.detections, crop, size) : [];
+  }
+  return result;
 }
