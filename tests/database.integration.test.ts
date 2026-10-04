@@ -9,10 +9,10 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('PostGIS database and API inte
       import('supertest'),
     ]);
     const app = createApp(parkingRepository);
-    const inside = await request(app).get('/api/parking?minLon=16.9&minLat=52.39&maxLon=16.97&maxLat=52.42');
+    const inside = await request(app).get('/api/parking?minLon=19.8&minLat=49.95&maxLon=20.1&maxLat=50.15');
     expect(inside.status).toBe(200);
-    expect(inside.body.parking.length).toBeGreaterThanOrEqual(5);
-    const outside = await request(app).get('/api/parking?minLon=17&minLat=52.39&maxLon=17.1&maxLat=52.42');
+    expect(inside.body.parking.length).toBeGreaterThanOrEqual(6);
+    const outside = await request(app).get('/api/parking?minLon=16.9&minLat=52.39&maxLon=17&maxLat=52.42');
     expect(outside.status).toBe(200);
     expect(outside.body.parking).toHaveLength(0);
     const byId = await request(app).get('/api/parking/00000000-0000-4000-8000-000000000001');
