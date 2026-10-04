@@ -7,6 +7,12 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ParkingType {
+  OUTDOOR
+  COVERED
+  UNDERGROUND
+}
+
 enum ParkingStatus {
   ACTIVE
   OFFLINE
@@ -21,8 +27,16 @@ model Parking {
   address               String
   latitude              Float
   longitude             Float
-  totalSpaces           Int
+  // Three separate pools of spaces, each with its own occupancy: regular, reserved for disabled drivers, with an EV charger.
+  // regularSpaces counts regular spaces only.
+  regularSpaces           Int
+  disabledSpaces        Int               @default(0)
+  evChargerSpaces       Int               @default(0)
+  isPaid                Boolean           @default(false)
+  type                  ParkingType       @default(OUTDOOR)
   occupiedSpaces        Int               @default(0)
+  occupiedDisabledSpaces  Int             @default(0)
+  occupiedEvChargerSpaces Int             @default(0)
   status                ParkingStatus     @default(ACTIVE)
   streamUrl             String?
   recognitionConfidence Float?
@@ -33,7 +47,6 @@ model Parking {
   createdAt             DateTime          @default(now()) @db.Timestamptz(3)
   updatedAt             DateTime          @updatedAt @db.Timestamptz(3)
   cameras               Camera[]
-  feedback              ParkingFeedback[]
 
   @@index([status, workerLeaseUntil])
   @@index([workerId, workerLeaseUntil])
@@ -79,21 +92,20 @@ model Camera {
   @@index([parkingId])
 }
 
-enum FeedbackAnswer {
-  CORRECT
-  LESS
-  MORE
+enum FreeLevel {
+  NONE
+  FEW
+  MANY
 }
 
-// A user's answer to "we think N spaces are free": is that right, are there fewer, or are there more.
-model ParkingFeedback {
-  id                  String         @id @default(uuid()) @db.Uuid
-  parkingId           String         @db.Uuid
-  parking             Parking        @relation(fields: [parkingId], references: [id], onDelete: Cascade)
-  answer              FeedbackAnswer
-  // Free spaces we reported at the time of the answer.
-  estimatedFreeSpaces Int
-  createdAt           DateTime       @default(now()) @db.Timestamptz(3)
+// A user-reported spot with a rough amount of free parking. Independent of Parking (camera-counted lots); expires at expiresAt; null means it never expires.
+model ReportedZone {
+  id        String    @id @default(uuid()) @db.Uuid
+  latitude  Float
+  longitude Float
+  level     FreeLevel
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt DateTime? @db.Timestamptz(3)
 
-  @@index([parkingId, createdAt])
+  @@index([expiresAt])
 }

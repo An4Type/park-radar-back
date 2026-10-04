@@ -4,7 +4,7 @@ import { Prisma } from '../../../packages/database/generated/prisma/client.js';
 
 export interface ClaimedParking {
   id: string;
-  totalSpaces: number;
+  regularSpaces: number;
   streamUrl: string | null;
 }
 
@@ -23,7 +23,7 @@ export async function claimParking(workerId: string, leaseSeconds: number): Prom
         "updatedAt" = NOW()
     FROM candidate
     WHERE p."id" = candidate."id"
-    RETURNING p."id", p."totalSpaces", p."streamUrl"
+    RETURNING p."id", p."regularSpaces", p."streamUrl"
   `;
   return rows[0] ?? null;
 }

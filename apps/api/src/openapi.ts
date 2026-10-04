@@ -6,12 +6,28 @@ const parkingSchema = {
     address: { type: 'string' },
     latitude: { type: 'number' },
     longitude: { type: 'number' },
-    totalSpaces: { type: 'integer' },
-    occupiedSpaces: { type: 'integer' },
-    freeSpaces: { type: 'integer' },
+    isPaid: { type: 'boolean' },
+    type: { type: 'string', enum: ['OUTDOOR', 'COVERED', 'UNDERGROUND'], description: 'OUTDOOR = open-air, COVERED = under a roof' },
+    regularSpaces: { type: 'integer', description: 'Regular spaces (capacity; disabled and EV charger spaces are not included)' },
+    freeRegularSpaces: { type: 'integer', description: 'Free regular spaces' },
+    disabledSpaces: { type: 'integer', description: 'Spaces reserved for disabled drivers (capacity; 0 = none)' },
+    freeDisabledSpaces: { type: 'integer', description: 'Free spaces reserved for disabled drivers' },
+    evChargerSpaces: { type: 'integer', description: 'Spaces with an electric-vehicle charger (capacity; 0 = none)' },
+    freeEvChargerSpaces: { type: 'integer', description: 'Free spaces with an electric-vehicle charger' },
     status: { type: 'string', enum: ['ACTIVE', 'OFFLINE', 'STREAM_ERROR', 'RECOGNITION_ERROR', 'DISABLED'] },
     confidence: { type: 'number', nullable: true },
     lastUpdatedAt: { type: 'string', format: 'date-time', nullable: true },
+  },
+};
+const zoneSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    latitude: { type: 'number' },
+    longitude: { type: 'number' },
+    level: { type: 'string', enum: ['NONE', 'FEW', 'MANY'], description: 'Rough amount of free parking' },
+    createdAt: { type: 'string', format: 'date-time' },
+    expiresAt: { type: 'string', format: 'date-time', nullable: true, description: 'null = never expires' },
   },
 };
 const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, example: '00000000-0000-4000-8000-000000000006' };
@@ -21,10 +37,17 @@ const bbox = (name: string, example: number) => ({ name, in: 'query', schema: { 
 export const openApiSpec = {
   openapi: '3.0.3',
   info: { title: 'Park Radar API', version: '1.0.0' },
+  tags: [
+    { name: 'Clients', description: 'Public endpoints for the mobile app. No authentication.' },
+    { name: 'Workers', description: 'Internal endpoints for camera workers. Require `Authorization: Bearer <INGEST_TOKEN>`.' },
+    { name: 'System', description: 'Operational endpoints.' },
+  ],
   paths: {
-    '/health': { get: { summary: 'Health check', responses: { 200: { description: 'OK' } } } },
+    '/health': { get: { tags: ['System'],
+        summary: 'Health check', responses: { 200: { description: 'OK' } } } },
     '/api/parking': {
       get: {
+        tags: ['Clients'],
         summary: 'List parking lots, optionally within a bounding box',
         description: 'Provide all four bbox parameters or none.',
         parameters: [bbox('minLon', 19.8), bbox('minLat', 49.95), bbox('maxLon', 20.1), bbox('maxLat', 50.15)],
@@ -33,6 +56,7 @@ export const openApiSpec = {
     },
     '/api/parking/{id}': {
       get: {
+        tags: ['Clients'],
         summary: 'Get one parking lot, including the latest recognition data',
         parameters: [idParam],
         responses: { 200: { description: 'Parking lot' }, 400: error, 404: error },
@@ -40,8 +64,9 @@ export const openApiSpec = {
     },
     '/api/parking/{id}/occupancy': {
       post: {
+        tags: ['Workers'],
         summary: 'Push a recognition result (used by camera workers)',
-        description: 'Requires `Authorization: Bearer <INGEST_TOKEN>` — use the Authorize button.',
+        description: 'Requires `Authorization: Bearer <INGEST_TOKEN>` — use the Authorize button. An ACTIVE report needs at least one of the three occupied counts; counts that are omitted keep their last known value.',
         security: [{ ingestToken: [] }],
         parameters: [idParam],
         requestBody: {
@@ -51,7 +76,9 @@ export const openApiSpec = {
             required: ['status'],
             properties: {
               status: { type: 'string', enum: ['ACTIVE', 'STREAM_ERROR', 'RECOGNITION_ERROR', 'OFFLINE'] },
-              occupiedSpaces: { type: 'integer', minimum: 0, description: 'Required when status is ACTIVE' },
+              occupiedSpaces: { type: 'integer', minimum: 0, description: 'Cars in regular spaces' },
+              occupiedDisabledSpaces: { type: 'integer', minimum: 0, description: 'Cars in disabled spaces' },
+              occupiedEvChargerSpaces: { type: 'integer', minimum: 0, description: 'Cars in EV charger spaces' },
               confidence: { type: 'number', minimum: 0, maximum: 1 },
               recognizedAt: { type: 'string', format: 'date-time' },
               data: { type: 'object' },
@@ -62,25 +89,33 @@ export const openApiSpec = {
         responses: { 200: { description: 'Updated parking lot' }, 400: error, 401: error, 404: error, 503: error },
       },
     },
-    '/api/parking/{id}/feedback': {
+    '/api/zones': {
+      get: {
+        tags: ['Clients'],
+        summary: 'List active user-reported zones, optionally within a bounding box',
+        description: 'Zones come from user reports, not cameras, and disappear when they expire. Provide all four bbox parameters or none.',
+        parameters: [bbox('minLon', 19.8), bbox('minLat', 49.95), bbox('maxLon', 20.1), bbox('maxLat', 50.15)],
+        responses: { 200: { description: 'Active zones', content: { 'application/json': { schema: { type: 'object', properties: { zones: { type: 'array', items: zoneSchema } } } } } }, 400: error },
+      },
       post: {
-        summary: 'Tell us whether the free-space estimate is right',
-        description: 'Public, no authentication. `correct` = the estimate matches, `less` = fewer spaces are free, `more` = more are free. Every answer assumes one more car is parking, so free spaces change by −1 for `correct`, 0 for `more` and −2 for `less` (never below 0 or above the total). The answer is also stored.',
-        parameters: [idParam],
+        tags: ['Clients'],
+        summary: 'Report free parking at a location',
+        description: 'Public, no authentication. Creates a zone that expires after the configured lifespan (`ZONE_TTL_MINUTES`, default 30). If an active zone is within ZONE_MERGE_METERS (default 6) of the reported point, the level of that zone is updated and its lifespan restarted instead; its position does not change.',
         requestBody: {
           required: true,
           content: { 'application/json': { schema: {
             type: 'object',
-            required: ['answer'],
-            properties: { answer: { type: 'string', enum: ['correct', 'less', 'more'] } },
-            example: { answer: 'less' },
+            required: ['latitude', 'longitude', 'level'],
+            properties: { latitude: { type: 'number' }, longitude: { type: 'number' }, level: { type: 'string', enum: ['none', 'few', 'many'] } },
+            example: { latitude: 50.0639, longitude: 19.9241, level: 'few' },
           } } },
         },
-        responses: { 201: { description: 'Feedback recorded; returns the updated parking lot' }, 400: error, 404: error },
+        responses: { 200: { description: 'Existing nearby zone updated', content: { 'application/json': { schema: { type: 'object', properties: { zone: zoneSchema } } } } }, 201: { description: 'Zone created', content: { 'application/json': { schema: { type: 'object', properties: { zone: zoneSchema } } } } }, 400: error },
       },
     },
     '/api/cameras/{id}': {
       get: {
+        tags: ['Workers'],
         summary: 'Get a camera configuration (used by camera workers)',
         description: 'Requires `Authorization: Bearer <INGEST_TOKEN>`.',
         security: [{ ingestToken: [] }],

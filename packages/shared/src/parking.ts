@@ -1,3 +1,5 @@
+export type ParkingType = 'OUTDOOR' | 'COVERED' | 'UNDERGROUND';
+
 export type ParkingStatus = 'ACTIVE' | 'OFFLINE' | 'STREAM_ERROR' | 'RECOGNITION_ERROR' | 'DISABLED';
 
 export interface ParkingRecord {
@@ -6,8 +8,14 @@ export interface ParkingRecord {
   address: string;
   latitude: number;
   longitude: number;
-  totalSpaces: number;
+  regularSpaces: number;
+  disabledSpaces: number;
+  evChargerSpaces: number;
+  isPaid: boolean;
+  type: ParkingType;
   occupiedSpaces: number;
+  occupiedDisabledSpaces: number;
+  occupiedEvChargerSpaces: number;
   status: ParkingStatus;
   recognitionConfidence: number | null;
   recognitionData: unknown | null;
@@ -27,8 +35,8 @@ export class InputError extends Error {
   }
 }
 
-export function freeSpaces(totalSpaces: number, occupiedSpaces: number): number {
-  return Math.max(totalSpaces - occupiedSpaces, 0);
+export function freeSpaces(regularSpaces: number, occupiedSpaces: number): number {
+  return Math.max(regularSpaces - occupiedSpaces, 0);
 }
 
 export function parkingDto(parking: ParkingRecord, detailed = false) {
@@ -38,9 +46,15 @@ export function parkingDto(parking: ParkingRecord, detailed = false) {
     address: parking.address,
     latitude: parking.latitude,
     longitude: parking.longitude,
-    totalSpaces: parking.totalSpaces,
-    occupiedSpaces: parking.occupiedSpaces,
-    freeSpaces: freeSpaces(parking.totalSpaces, parking.occupiedSpaces),
+    isPaid: parking.isPaid,
+    type: parking.type,
+    // Three separate pools, each as capacity plus free count (a capacity of 0 means the parking has none of that kind).
+    regularSpaces: parking.regularSpaces,
+    freeRegularSpaces: freeSpaces(parking.regularSpaces, parking.occupiedSpaces),
+    disabledSpaces: parking.disabledSpaces,
+    freeDisabledSpaces: freeSpaces(parking.disabledSpaces, parking.occupiedDisabledSpaces),
+    evChargerSpaces: parking.evChargerSpaces,
+    freeEvChargerSpaces: freeSpaces(parking.evChargerSpaces, parking.occupiedEvChargerSpaces),
     status: parking.status,
     confidence: parking.recognitionConfidence,
     lastUpdatedAt: parking.lastRecognizedAt?.toISOString() ?? null,
@@ -65,41 +79,69 @@ export function parseBbox(query: Record<string, unknown>): Bbox | undefined {
 
 export interface OccupancyReport {
   status: ParkingStatus;
+  /** Cars in regular spaces; null when the camera does not see any. */
   occupiedSpaces: number | null;
+  occupiedDisabledSpaces: number | null;
+  occupiedEvChargerSpaces: number | null;
   confidence: number | null;
   recognizedAt: Date;
   data: Record<string, unknown> | null;
 }
 
 const reportStatuses: ParkingStatus[] = ['ACTIVE', 'STREAM_ERROR', 'RECOGNITION_ERROR', 'OFFLINE'];
+const countFields = ['occupiedSpaces', 'occupiedDisabledSpaces', 'occupiedEvChargerSpaces'] as const;
 
 export function parseOccupancyReport(body: unknown): OccupancyReport {
   const bad = (message: string) => new InputError('INVALID_REPORT', message);
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw bad('Body must be a JSON object.');
-  const { status, occupiedSpaces = null, confidence = null, recognizedAt, data = null } = body as Record<string, unknown>;
+  const { status, confidence = null, recognizedAt, data = null } = body as Record<string, unknown>;
   if (typeof status !== 'string' || !reportStatuses.includes(status as ParkingStatus)) throw bad(`status must be one of ${reportStatuses.join(', ')}.`);
-  if (status === 'ACTIVE' && !(Number.isInteger(occupiedSpaces) && (occupiedSpaces as number) >= 0)) throw bad('occupiedSpaces must be a non-negative integer when status is ACTIVE.');
-  if (occupiedSpaces !== null && !(Number.isInteger(occupiedSpaces) && (occupiedSpaces as number) >= 0)) throw bad('occupiedSpaces must be a non-negative integer.');
+  // A camera may only see some of the pools, so each count is optional; an ACTIVE report needs at least one.
+  const counts = {} as Record<(typeof countFields)[number], number | null>;
+  for (const field of countFields) {
+    const value = (body as Record<string, unknown>)[field] ?? null;
+    if (value !== null && !(Number.isInteger(value) && (value as number) >= 0)) throw bad(`${field} must be a non-negative integer.`);
+    counts[field] = value as number | null;
+  }
+  if (status === 'ACTIVE' && countFields.every((field) => counts[field] === null)) throw bad('An ACTIVE report needs occupiedSpaces, occupiedDisabledSpaces or occupiedEvChargerSpaces.');
   if (confidence !== null && !(typeof confidence === 'number' && confidence >= 0 && confidence <= 1)) throw bad('confidence must be a number between 0 and 1.');
   const when = recognizedAt === undefined ? new Date() : new Date(recognizedAt as string);
   if (Number.isNaN(when.getTime()) || when.getTime() > Date.now() + 60_000) throw bad('recognizedAt must be a valid, non-future timestamp.');
   if (data !== null && (typeof data !== 'object' || Array.isArray(data))) throw bad('data must be an object.');
-  return { status: status as ParkingStatus, occupiedSpaces: occupiedSpaces as number | null, confidence: confidence as number | null, recognizedAt: when, data: data as Record<string, unknown> | null };
+  return { status: status as ParkingStatus, ...counts, confidence: confidence as number | null, recognizedAt: when, data: data as Record<string, unknown> | null };
 }
 
-export type FeedbackAnswer = 'CORRECT' | 'LESS' | 'MORE';
+export type FreeLevel = 'NONE' | 'FEW' | 'MANY';
 
-const feedbackAnswers: Record<string, FeedbackAnswer> = { correct: 'CORRECT', less: 'LESS', more: 'MORE' };
+const freeLevels: Record<string, FreeLevel> = { none: 'NONE', few: 'FEW', many: 'MANY' };
 
-// Every answer means one more car is taking a space (+1 occupied); "more" cancels that out, "less" adds one more.
-export const feedbackOccupiedDelta: Record<FeedbackAnswer, number> = { CORRECT: 1, MORE: 0, LESS: 2 };
+export interface ZoneInput {
+  latitude: number;
+  longitude: number;
+  level: FreeLevel;
+}
 
-/** Accepts `{ "answer": "correct" | "less" | "more" }`. */
-export function parseFeedback(body: unknown): FeedbackAnswer {
-  const answer = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>).answer : undefined;
-  const parsed = typeof answer === 'string' ? feedbackAnswers[answer.toLowerCase()] : undefined;
-  if (!parsed) throw new InputError('INVALID_FEEDBACK', `answer must be one of ${Object.keys(feedbackAnswers).join(', ')}.`);
-  return parsed;
+export interface ZoneRecord extends ZoneInput {
+  id: string;
+  createdAt: Date;
+  /** null = never expires. */
+  expiresAt: Date | null;
+}
+
+/** Accepts `{ "latitude": number, "longitude": number, "level": "none" | "few" | "many" }`. */
+export function parseZone(body: unknown): ZoneInput {
+  const bad = (message: string) => new InputError('INVALID_ZONE', message);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw bad('Body must be a JSON object.');
+  const { latitude, longitude, level } = body as Record<string, unknown>;
+  if (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) throw bad('latitude must be a number between -90 and 90.');
+  if (typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw bad('longitude must be a number between -180 and 180.');
+  const parsed = typeof level === 'string' ? freeLevels[level.toLowerCase()] : undefined;
+  if (!parsed) throw bad(`level must be one of ${Object.keys(freeLevels).join(', ')}.`);
+  return { latitude, longitude, level: parsed };
+}
+
+export function zoneDto(zone: ZoneRecord) {
+  return { id: zone.id, latitude: zone.latitude, longitude: zone.longitude, level: zone.level, createdAt: zone.createdAt.toISOString(), expiresAt: zone.expiresAt?.toISOString() ?? null };
 }
 
 export interface CameraRecord {

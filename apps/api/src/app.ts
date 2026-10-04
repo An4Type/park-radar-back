@@ -1,10 +1,12 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import { InputError, cameraDto, parkingDto, parseBbox, parseFeedback, parseOccupancyReport } from '../../../packages/shared/src/parking.js';
+import { InputError, cameraDto, parkingDto, parseBbox, parseOccupancyReport, parseZone, zoneDto } from '../../../packages/shared/src/parking.js';
 import { errorMessage, log } from '../../../packages/shared/src/log.js';
 import { docsHtml, openApiSpec } from './openapi.js';
 import type { ParkingRepository } from './repository.js';
 
+const defaultZoneTtlSeconds = 30 * 60;
+const defaultZoneMergeMeters = 6;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function tokenMatches(header: string | undefined, token: string): boolean {
@@ -13,7 +15,7 @@ function tokenMatches(header: string | undefined, token: string): boolean {
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-export function createApp(repository: ParkingRepository, options: { ingestToken?: string } = {}) {
+export function createApp(repository: ParkingRepository, options: { ingestToken?: string; zoneTtlSeconds?: number; zoneMergeMeters?: number } = {}) {
   const app = express();
   app.disable('x-powered-by');
 
@@ -55,13 +57,19 @@ export function createApp(repository: ParkingRepository, options: { ingestToken?
     return response.json({ parking: parkingDto(parking) });
   });
 
-  // Public, unauthenticated: a user tells us whether the free-space estimate was right.
-  app.post('/api/parking/:id/feedback', express.json({ limit: '1kb' }), async (request, response) => {
-    const id = request.params.id;
-    if (!id || !uuidPattern.test(id)) throw new InputError('INVALID_ID', 'Parking ID must be a UUID.');
-    const parking = await repository.recordFeedback(id, parseFeedback(request.body));
-    if (!parking) return response.status(404).json({ error: 'NOT_FOUND', message: 'Parking lot not found.' });
-    return response.status(201).json({ parking: parkingDto(parking) });
+  // Public, unauthenticated: user-reported zones are separate from camera-counted parking and expire on their own.
+  app.get('/api/zones', async (request, response) => {
+    const zones = await repository.listZones(parseBbox(request.query));
+    response.json({ zones: zones.map(zoneDto) });
+  });
+
+  app.post('/api/zones', express.json({ limit: '1kb' }), async (request, response) => {
+    const { zone, created } = await repository.createZone(parseZone(request.body), {
+      ttlSeconds: options.zoneTtlSeconds ?? defaultZoneTtlSeconds,
+      mergeMeters: options.zoneMergeMeters ?? defaultZoneMergeMeters,
+    });
+    // A nearby report updates the existing zone, so the response says which happened.
+    response.status(created ? 201 : 200).json({ zone: zoneDto(zone) });
   });
 
   // Camera configuration for a worker, which is started with only a camera id.

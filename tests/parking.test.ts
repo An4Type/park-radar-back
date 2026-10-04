@@ -12,7 +12,8 @@ describe('parking data', () => {
     const withLease = { ...sampleParking, workerId: 'worker-1', workerLeaseUntil: new Date() };
     expect(parkingDto(withLease)).toEqual({
       id: sampleParking.id, name: 'Test parking', address: 'Test 1', latitude: 52.4, longitude: 16.9,
-      totalSpaces: 120, occupiedSpaces: 83, freeSpaces: 37, status: 'ACTIVE',
+      isPaid: true, type: 'UNDERGROUND',
+      regularSpaces: 120, freeRegularSpaces: 37, disabledSpaces: 6, freeDisabledSpaces: 4, evChargerSpaces: 4, freeEvChargerSpaces: 3, status: 'ACTIVE',
       confidence: 0.94, lastUpdatedAt: '2026-10-03T12:00:00.000Z',
     });
     expect(parkingDto(withLease, true)).toHaveProperty('recognitionData', { model: 'mock-v1' });

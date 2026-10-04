@@ -1,15 +1,20 @@
 import 'dotenv/config';
 import { prisma } from '../src/client.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import { mockParkings } from './mock-parkings.js';
+import { mockZones } from './mock-zones.js';
 
-const parkings = [
-  { id: '00000000-0000-4000-8000-000000000001', name: 'Galeria Krakowska', address: 'Pawia 5, Kraków', latitude: 50.0670, longitude: 19.9447, totalSpaces: 320, occupiedSpaces: 170 },
-  { id: '00000000-0000-4000-8000-000000000002', name: 'Bonarka City Center', address: 'Kamieńskiego 11, Kraków', latitude: 50.0166, longitude: 19.9513, totalSpaces: 500, occupiedSpaces: 290 },
-  { id: '00000000-0000-4000-8000-000000000003', name: 'Galeria Kazimierz', address: 'Podgórska 34, Kraków', latitude: 50.0494, longitude: 19.9518, totalSpaces: 230, occupiedSpaces: 120 },
-  { id: '00000000-0000-4000-8000-000000000004', name: 'Plaza Kraków', address: 'Jana Pawła II 41e, Kraków', latitude: 50.0728, longitude: 19.9917, totalSpaces: 180, occupiedSpaces: 65 },
-  { id: '00000000-0000-4000-8000-000000000005', name: 'Galeria Bronowice', address: 'Stawowa 61, Kraków', latitude: 50.0820, longitude: 19.8913, totalSpaces: 95, occupiedSpaces: 55 },
-  { id: '00000000-0000-4000-8000-000000000006', name: 'AGH street parking', address: 'Główna Aleja Kampusu AGH, al. Mickiewicza 30, Kraków', latitude: 50.0639, longitude: 19.9241, totalSpaces: 8, occupiedSpaces: 0 },
+// Illustrative values: replace with surveyed data before relying on them.
+const realParkings: Prisma.ParkingUncheckedCreateInput[] = [
+  { id: '00000000-0000-4000-8000-000000000001', name: 'Galeria Krakowska', address: 'Pawia 5, Kraków', latitude: 50.0670, longitude: 19.9447, regularSpaces: 294, disabledSpaces: 16, evChargerSpaces: 10, isPaid: true, type: 'UNDERGROUND', occupiedSpaces: 170, occupiedDisabledSpaces: 4, occupiedEvChargerSpaces: 3 },
+  { id: '00000000-0000-4000-8000-000000000002', name: 'Bonarka City Center', address: 'Kamieńskiego 11, Kraków', latitude: 50.0166, longitude: 19.9513, regularSpaces: 456, disabledSpaces: 20, evChargerSpaces: 24, isPaid: false, type: 'COVERED', occupiedSpaces: 290, occupiedDisabledSpaces: 5, occupiedEvChargerSpaces: 8 },
+  { id: '00000000-0000-4000-8000-000000000003', name: 'Galeria Kazimierz', address: 'Podgórska 34, Kraków', latitude: 50.0494, longitude: 19.9518, regularSpaces: 214, disabledSpaces: 10, evChargerSpaces: 6, isPaid: true, type: 'UNDERGROUND', occupiedSpaces: 120, occupiedDisabledSpaces: 2, occupiedEvChargerSpaces: 2 },
+  { id: '00000000-0000-4000-8000-000000000004', name: 'Plaza Kraków', address: 'Jana Pawła II 41e, Kraków', latitude: 50.0728, longitude: 19.9917, regularSpaces: 164, disabledSpaces: 8, evChargerSpaces: 8, isPaid: false, type: 'COVERED', occupiedSpaces: 65, occupiedDisabledSpaces: 2, occupiedEvChargerSpaces: 2 },
+  { id: '00000000-0000-4000-8000-000000000005', name: 'Galeria Bronowice', address: 'Stawowa 61, Kraków', latitude: 50.0820, longitude: 19.8913, regularSpaces: 88, disabledSpaces: 5, evChargerSpaces: 2, isPaid: false, type: 'OUTDOOR', occupiedSpaces: 55, occupiedDisabledSpaces: 1, occupiedEvChargerSpaces: 0 },
+  { id: '00000000-0000-4000-8000-000000000006', name: 'AGH street parking', address: 'Główna Aleja Kampusu AGH, al. Mickiewicza 30, Kraków', latitude: 50.0639, longitude: 19.9241, regularSpaces: 8, disabledSpaces: 0, evChargerSpaces: 0, isPaid: false, type: 'OUTDOOR', occupiedSpaces: 0, occupiedDisabledSpaces: 0, occupiedEvChargerSpaces: 0 },
 ];
+
+const parkings = [...realParkings, ...mockParkings];
 
 // Camera definitions the workers load by id (previously apps/camera-worker/config/cameras.json).
 const cameras: Prisma.CameraUncheckedCreateInput[] = [
@@ -175,15 +180,19 @@ try {
   for (const parking of parkings) {
     await prisma.parking.upsert({
       where: { id: parking.id },
-      update: { name: parking.name, address: parking.address, latitude: parking.latitude, longitude: parking.longitude, totalSpaces: parking.totalSpaces },
+      update: { name: parking.name, address: parking.address, latitude: parking.latitude, longitude: parking.longitude, regularSpaces: parking.regularSpaces, disabledSpaces: parking.disabledSpaces, evChargerSpaces: parking.evChargerSpaces, isPaid: parking.isPaid, type: parking.type },
       create: parking,
     });
+  }
+  for (const zone of mockZones) {
+    // Seeded zones only fill in a missing one; level changes from user reports are kept.
+    await prisma.reportedZone.upsert({ where: { id: zone.id as string }, update: {}, create: zone });
   }
   for (const camera of cameras) {
     // Seeded values only fill in a new camera; edits made in the database are kept.
     await prisma.camera.upsert({ where: { id: camera.id }, update: {}, create: camera });
   }
-  console.log(JSON.stringify({ service: 'seed', event: 'complete', count: parkings.length, cameras: cameras.length }));
+  console.log(JSON.stringify({ service: 'seed', event: 'complete', count: parkings.length, cameras: cameras.length, zones: mockZones.length }));
 } finally {
   await prisma.$disconnect();
 }

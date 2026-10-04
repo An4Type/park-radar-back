@@ -17,6 +17,6 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('PostGIS database and API inte
     expect(outside.body.parking).toHaveLength(0);
     const byId = await request(app).get('/api/parking/00000000-0000-4000-8000-000000000001');
     expect(byId.status).toBe(200);
-    expect(byId.body.parking.freeSpaces).toBeGreaterThanOrEqual(0);
+    expect(byId.body.parking.freeRegularSpaces).toBeGreaterThanOrEqual(0);
   });
 });

@@ -18,6 +18,15 @@ test('ok analysis becomes an ACTIVE report with summed vehicles and lowest confi
   assert.equal(report.confidence, 0.7);
 });
 
+test('vehicles are summed per space kind and pools without areas are omitted', () => {
+  const kinds = { ...analysis, areas: [{ kind: 'regular', vehicles: 4, confidence: 0.9 }, { kind: 'regular', vehicles: 1, confidence: 0.9 }, { kind: 'disabled', vehicles: 2, confidence: 0.8 }] };
+  const report = buildReport(camera, { ok: true, analysis: kinds });
+  assert.equal(report.occupiedSpaces, 5);
+  assert.equal(report.occupiedDisabledSpaces, 2);
+  assert.ok(!('occupiedEvChargerSpaces' in report));
+  assert.ok(!('occupiedSpaces' in buildReport(camera, { ok: true, analysis: { ...analysis, areas: [{ kind: 'ev', vehicles: 1, confidence: 0.9 }] } })));
+});
+
 test('failures map to error statuses and cameras without parkingId report nothing', () => {
   assert.equal(buildReport(camera, { ok: false, reason: 'capture' }).status, 'STREAM_ERROR');
   assert.equal(buildReport(camera, { ok: false, reason: 'analysis' }).status, 'RECOGNITION_ERROR');

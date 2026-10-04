@@ -14,6 +14,8 @@ function url(value, name) {
   return value;
 }
 
+export const AREA_KINDS = ['regular', 'disabled', 'ev'];
+
 // Parking areas are hand-marked polygons in normalized image coordinates (0–1, origin top-left).
 // Their ids become file name parts, so they are restricted like camera ids.
 function parkingAreas(value, cameraId) {
@@ -37,9 +39,11 @@ function parkingAreas(value, cameraId) {
     }, 0));
     if (twiceArea < 1e-6) throw new Error(`${cameraId}.${area.id}: polygon has no area`);
     if (area.mask !== undefined && typeof area.mask !== 'boolean') throw new Error(`${cameraId}.${area.id}: mask must be a boolean`);
+    // kind says which pool of spaces the area covers; unmarked areas are regular spaces.
+    if (area.kind !== undefined && !AREA_KINDS.includes(area.kind)) throw new Error(`${cameraId}.${area.id}: kind must be one of ${AREA_KINDS.join(', ')}`);
     // capacity is the number of cars the area holds when full, recorded by hand.
     if (area.capacity !== undefined) integer(area.capacity, `${cameraId}.${area.id}.capacity`, 1, 500);
-    return { id: area.id, points, mask: area.mask ?? false, ...(area.capacity !== undefined ? { capacity: area.capacity } : {}) };
+    return { id: area.id, points, kind: area.kind ?? 'regular', mask: area.mask ?? false, ...(area.capacity !== undefined ? { capacity: area.capacity } : {}) };
   });
 }
 

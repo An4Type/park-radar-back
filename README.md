@@ -12,18 +12,21 @@ cp .env.example .env   # then set OPENAI_API_KEY in .env
 docker compose up --build
 ```
 
-The API waits for a healthy database, applies the checked-in migration, and seeds five mock Kraków parking lots (plus the live AGH one) before listening. Camera workers start with the stack. Only the API port is exposed. Startup may take longer the first time because the worker image includes Chromium.
+The API waits for a healthy database, applies the checked-in migration, and seeds five mock Kraków parking lots, the live AGH one and about 40 mock street parkings around Kraków (`packages/database/prisma/mock-parkings.ts`) before listening. Camera workers start with the stack. Only the API port is exposed. Startup may take longer the first time because the worker image includes Chromium.
 The PostGIS image runs as `linux/amd64`, so Docker Desktop may emulate it on Apple Silicon.
 
 ```bash
 curl http://localhost:3000/health
 curl 'http://localhost:3000/api/parking?minLon=19.8&minLat=49.95&maxLon=20.1&maxLat=50.15'
 curl http://localhost:3000/api/parking/00000000-0000-4000-8000-000000000001
-# user feedback on the free-space estimate: correct | less | more
-curl -X POST -H 'Content-Type: application/json' -d '{"answer":"less"}' http://localhost:3000/api/parking/00000000-0000-4000-8000-000000000001/feedback
+# user-reported zone: level is none | few | many
+curl -X POST -H 'Content-Type: application/json' -d '{"latitude":50.0639,"longitude":19.9241,"level":"few"}' http://localhost:3000/api/zones
+curl 'http://localhost:3000/api/zones?minLon=19.8&minLat=49.95&maxLon=20.1&maxLat=50.15'
 ```
 
-The first response should report `{"status":"ok","database":"connected"}`. The BBOX response contains `{ "parking": [...] }`; each item includes `totalSpaces`, `occupiedSpaces`, and derived `freeSpaces`. Repeat it after several seconds to see occupancy change.
+The first response should report `{"status":"ok","database":"connected"}`. The BBOX response contains `{ "parking": [...] }`; each item has `isPaid`, `type` (`OUTDOOR`, `COVERED` or `UNDERGROUND`) and a capacity and a free count for each of three separate pools of spaces: `regularSpaces` / `freeRegularSpaces`, `disabledSpaces` / `freeDisabledSpaces` and `evChargerSpaces` / `freeEvChargerSpaces`. A capacity of 0 means the parking has none of that kind, so a free count of 0 with a capacity above 0 means full. Busy counts stay internal. Repeat it after several seconds to see occupancy change.
+
+Camera-counted parking (`/api/parking`) and user-reported zones (`/api/zones`) are separate. Parking has exact free/busy numbers and is never changed by user input. A camera tells the pools apart through the `kind` of each parking area (`regular` by default, `disabled` or `ev`); it reports one count per kind, and a pool with no marked area keeps its last known count. A zone has only coordinates and a rough `level` (`NONE`, `FEW`, `MANY`); it expires after `ZONE_TTL_MINUTES` (default 30) and then stops being listed. A report within `ZONE_MERGE_METERS` (default 6) of an active zone updates that zone's level and restarts its lifespan instead of creating a new one (`200` instead of `201`; the zone keeps its original position). Seeded mock zones (`mock-zones.ts`) have `expiresAt: null` and never expire; a nearby report changes their level but keeps them permanent.
 
 ## Project layout
 

@@ -20,7 +20,7 @@ export class ParkingMonitor {
     provider?: RecognitionProvider,
   ) {
     // Replace this provider with an adapter to the existing recognition implementation.
-    this.provider = provider ?? new MockRecognitionProvider(parking.totalSpaces, parking.id);
+    this.provider = provider ?? new MockRecognitionProvider(parking.regularSpaces, parking.id);
   }
 
   stop(): void {
@@ -60,7 +60,7 @@ export class ParkingMonitor {
         continue;
       }
       try {
-        const result = validateRecognition(await this.provider.analyze(image), this.parking.totalSpaces);
+        const result = validateRecognition(await this.provider.analyze(image), this.parking.regularSpaces);
         if (result.clamped) log('worker', 'recognition_anomaly', { workerId: this.workerId, parkingId: this.parking.id, error: 'occupiedSpaces exceeded capacity' });
         const saved = await saveRecognition(this.parking.id, this.workerId, result.occupiedSpaces, result.confidence, result.metadata);
         if (!saved) { this.stop(); break; }

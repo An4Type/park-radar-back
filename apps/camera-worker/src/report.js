@@ -1,5 +1,16 @@
 import { log } from './capture.js';
 
+const KIND_FIELDS = { regular: 'occupiedSpaces', disabled: 'occupiedDisabledSpaces', ev: 'occupiedEvChargerSpaces' };
+
+function countsByKind(areas) {
+  const counts = {};
+  for (const area of areas) {
+    const field = KIND_FIELDS[area.kind ?? 'regular'];
+    counts[field] = (counts[field] ?? 0) + area.vehicles;
+  }
+  return counts;
+}
+
 // Turns one cycle result into the payload of POST /api/parking/:id/occupancy.
 // A failed capture is a stream problem; an unusable or failed analysis keeps the last known count.
 export function buildReport(camera, result) {
@@ -13,7 +24,8 @@ export function buildReport(camera, result) {
   return {
     status: 'ACTIVE',
     recognizedAt: result.capturedAt ?? recognizedAt,
-    occupiedSpaces: analysis.areas.reduce((sum, area) => sum + area.vehicles, 0),
+    // One count per pool; a pool the camera has no area for is left out so its last known value is kept.
+    ...countsByKind(analysis.areas),
     // The least certain area bounds how far the total can be trusted.
     confidence: confidences.length ? Math.min(...confidences) : null,
     data: { model: analysis.model, cameraId: camera.id, areas: analysis.areas, totalFree: analysis.totalFree },

@@ -89,7 +89,7 @@ export const REPLY_FORMAT = {
 export function buildPrompt(areas) {
   return `You will see one frame from a fixed parking camera, then one zoomed crop per parking area. In the full frame everything outside the labelled areas is blacked out; each crop is the same area enlarged, with its surroundings blacked out.
 Areas (id, capacity = how many cars fit when full):
-${areas.map((a) => `- ${a.id}${a.capacity ? ` (capacity ${a.capacity})` : ''}`).join('\n')}
+${areas.map((a) => `- ${a.id}${a.kind && a.kind !== 'regular' ? ` [${a.kind === 'ev' ? 'EV charger' : 'disabled'} spaces]` : ''}${a.capacity ? ` (capacity ${a.capacity})` : ''}`).join('\n')}
 For each area count the separate vehicles inside it, whether parked or moving, and say how many look parked and how many look moving. Use the crop to count precisely and the full frame for context. Cars parked in a row appear as several vehicles close together: count each one, including partly visible ones at the ends of the row. Do not assume an area is full or empty because of its capacity. Return JSON only, with numbers and no commentary or notes:
 {"areas": [{"id": string, "vehicles": number, "parked": number, "moving": number, "confidence": number between 0 and 1}],
  "frame_usable": boolean}
@@ -137,12 +137,12 @@ export function interpretReply(reply, areas, media) {
     const found = Array.isArray(reply?.areas) ? reply.areas.find((a) => a.id === area.id) : undefined;
     const vehicles = Number(found?.vehicles);
     if (!found || !Number.isInteger(vehicles) || vehicles < 0) {
-      return { id: area.id, state: 'unknown', vehicles: null, capacity, free: null, reason: found ? 'invalid answer' : 'no answer' };
+      return { id: area.id, kind: area.kind ?? 'regular', state: 'unknown', vehicles: null, capacity, free: null, reason: found ? 'invalid answer' : 'no answer' };
     }
     const state = reasons.length ? 'unknown' : 'ok';
     const confidence = Number(found.confidence);
     return {
-      id: area.id, state, vehicles,
+      id: area.id, kind: area.kind ?? 'regular', state, vehicles,
       parked: Number.isFinite(Number(found.parked)) ? Number(found.parked) : null,
       moving: Number.isFinite(Number(found.moving)) ? Number(found.moving) : null,
       capacity,
